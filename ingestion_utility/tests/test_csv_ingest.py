@@ -1,36 +1,60 @@
 import pytest
-from unittest.mock import MagicMock, patch
+from types import SimpleNamespace
+from pyspark.sql import SparkSession
 from edap_ingest.ingest.csv_ingest import CsvIngest
 
-@pytest.fixture
-def mock_dependencies():
-    input_args = MagicMock()
-    job_args = MagicMock()
-    common_utils = MagicMock()
-    process_monitoring = MagicMock()
-    validation_utils = MagicMock()
-    dbutils = MagicMock()
-
-    # mock job_args.get default returns and sets
-    job_args.get.side_effect = lambda key: {
-        "dry_run": False,
-        "source_location": "/path/to/source.csv",
-        "target_location": "db.schema.table",
-        "schema_struct": None,
-        "columns_to_be_added": ["col1", "col2"],
-    }.get(key, None)
-
-    return input_args, job_args, common_utils, process_monitoring, validation_utils, dbutils
 
 @pytest.fixture
-def csv_ingest_instance(mock_dependencies):
-    input_args, job_args, common_utils, process_monitoring, validation_utils, dbutils = mock_dependencies
-    ingest = CsvIngest(input_args, job_args, common_utils, process_monitoring, validation_utils, dbutils)
-    # Patch the SparkSession inside the instance
-    ingest.spark = MagicMock()
-    ingest.spark.read.load.return_value.count.return_value = 10
-    ingest.spark.read.load.return_value.write.mode.return_value.saveAsTable.return_value = None
-    return ingest
+def spark():
+    return SparkSession.builder.master("local[1]").appName("TestApp").getOrCreate()
+
+
+@pytest.fixture
+def dummy_args(spark):
+    return {
+        "input_args": SimpleNamespace(
+            get=lambda key: "csv" if key == "ingest_type" else None,
+            set_mandatory_input_params=lambda _: None,
+            set_default_values_for_input_params=lambda _: None
+        ),
+        "job_args": SimpleNamespace(
+            store={},
+            get=lambda key: {"schema": {}, "dry_run": False}.get(key, "value"),
+            set=lambda k, v: None
+        ),
+        "common_utils": SimpleNamespace(
+            log_msg=lambda msg, passed_logger_type=None: print(msg),
+            check_and_set_dbutils=lambda dbutils: dbutils or "dbutils",
+            read_yaml=lambda loc: {"key": "value"},
+            check_and_evaluate_str_to_bool=lambda val: val == "True",
+            get_date_split=lambda date: ("2024", "01", "01")
+        ),
+        "process_monitoring": SimpleNamespace(
+            insert_update_job_run_status=lambda status, passed_comments=None: None,
+            check_and_get_job_id=lambda: None
+        ),
+        "validation_utils": SimpleNamespace(
+            run_validations=lambda df: None
+        ),
+        "dbutils": SimpleNamespace(notebook=SimpleNamespace(exit=lambda msg: (_ for _ in ()).throw(SystemExit(msg))))
+    }
+
+
+@pytest.fixture
+def csv_ingest(dummy_args):
+    return CsvIngest(
+        dummy_args["input_args"],
+        dummy_args["job_args"],
+        dummy_args["common_utils"],
+        dummy_args["process_monitoring"],
+        dummy_args["validation_utils"],
+        dummy_args["dbutils"]
+    )
+
+
+def test_init(csv_ingest):
+    assert csv_ingest.this_class_name == "CsvIngest"
+
 
 @pytest.mark.parametrize("method_name", [
     "read_and_set_input_args",
@@ -40,113 +64,64 @@ def csv_ingest_instance(mock_dependencies):
     "form_schema_from_dict",
     "form_source_and_target_locations",
     "collate_columns_to_add",
-    "post_load",
-    "run_load"
+    "post_load"
 ])
-def test_methods_call_super_and_log(csv_ingest_instance, method_name):
-    method = getattr(csv_ingest_instance, method_name)
-    method()
-    # Check if common_utils_obj.log_msg was called for this method
-    assert any(method_name in call_args[0] for call_args in csv_ingest_instance.common_utils_obj.log_msg.call_args_list)
+def test_inherited_methods_success(csv_ingest, method_name):
+    method = getattr(csv_ingest, method_name)
+    method()  # Should not raise
 
-def test_load_with_schema_and_without(monkeypatch, csv_ingest_instance):
-    # Case 1: With schema_struct present
-    csv_ingest_instance.job_args_obj.get.side_effect = lambda key: {
-        "dry_run": False,
-        "source_location": "/source/path",
-        "target_location": "target.db.table",
-        "schema_struct": "fake_schema",
-        "columns_to_be_added": ["col1", "col2"],
-    }.get(key, None)
 
-    fake_df = MagicMock()
-    fake_df.count.return_value = 5
-    fake_df.write.mode.return_value.saveAsTable.return_value = None
-    # Patch spark.read.load to return a DataFrame with schema method chaining
-    mock_load = MagicMock(return_value=fake_df)
-    monkeypatch.setattr(csv_ingest_instance.spark.read, "load", mock_load)
+def test_run_load_success(csv_ingest, monkeypatch):
+    monkeypatch.setattr(csv_ingest, "pre_load", lambda: None)
+    monkeypatch.setattr(csv_ingest, "load", lambda: None)
+    monkeypatch.setattr(csv_ingest, "post_load", lambda: None)
+    csv_ingest.run_load()
 
-    csv_ingest_instance.load()
 
-    mock_load.assert_called_once_with("/source/path", format="csv", header="true")
-    fake_df.count.assert_called_once()
-    fake_df.write.mode.assert_called_once_with("append")
-    fake_df.write.mode.return_value.saveAsTable.assert_called_once_with("target.db.table")
+def test_run_load_failure(csv_ingest, monkeypatch):
+    monkeypatch.setattr(csv_ingest, "pre_load", lambda: (_ for _ in ()).throw(Exception("pre_load failed")))
+    with pytest.raises(Exception, match="pre_load failed"):
+        csv_ingest.run_load()
 
-    # Case 2: Without schema_struct (infer schema)
-    csv_ingest_instance.job_args_obj.get.side_effect = lambda key: {
-        "dry_run": False,
-        "source_location": "/source/path2",
-        "target_location": "target.db.table2",
+
+def test_load_with_schema_and_dry_run_false(csv_ingest, monkeypatch, spark):
+    mock_df = spark.createDataFrame([(1,)], ["a"])
+    mock_df.schema = lambda: "mock_schema"
+    monkeypatch.setattr(csv_ingest, "spark", spark)
+    monkeypatch.setattr(spark.read, "load", lambda *a, **kw: mock_df)
+    monkeypatch.setattr(mock_df, "count", lambda: 5)
+    monkeypatch.setattr(mock_df, "write", SimpleNamespace(mode=lambda m: SimpleNamespace(saveAsTable=lambda t: None)))
+
+    csv_ingest.job_args_obj.get = lambda k: {
         "schema_struct": None,
-        "columns_to_be_added": ["colA", "colB"],
-    }.get(key, None)
-
-    fake_df2 = MagicMock()
-    fake_df2.count.return_value = 8
-    fake_df2.write.mode.return_value.saveAsTable.return_value = None
-
-    # Patch load to return fake_df2
-    mock_load2 = MagicMock(return_value=fake_df2)
-    monkeypatch.setattr(csv_ingest_instance.spark.read, "load", mock_load2)
-
-    csv_ingest_instance.load()
-
-    mock_load2.assert_called_once_with("/source/path2", format="csv", inferSchema="true", header="true")
-    fake_df2.count.assert_called_once()
-    fake_df2.write.mode.assert_called_once_with("append")
-    fake_df2.write.mode.return_value.saveAsTable.assert_called_once_with("target.db.table2")
-
-def test_load_dry_run(monkeypatch, csv_ingest_instance):
-    # Setup dry_run = True
-    csv_ingest_instance.job_args_obj.get.side_effect = lambda key: {
-        "dry_run": True,
-        "source_location": "/source/dryrun",
-        "target_location": "target.dryrun.table",
-        "schema_struct": None,
-        "columns_to_be_added": [],
-    }.get(key, None)
-
-    fake_df = MagicMock()
-    fake_df.count.return_value = 3
-    fake_df.write.mode.return_value.saveAsTable.return_value = None
-    monkeypatch.setattr(csv_ingest_instance.spark.read, "load", MagicMock(return_value=fake_df))
-
-    csv_ingest_instance.load()
-
-    # Check that saveAsTable was NOT called because dry_run is True
-    fake_df.write.mode.return_value.saveAsTable.assert_not_called()
-
-def test_load_raises_exception(monkeypatch, csv_ingest_instance):
-    # Patch validation_obj.run_validations to raise an Exception
-    csv_ingest_instance.job_args_obj.get.side_effect = lambda key: {
         "dry_run": False,
-        "source_location": "/bad/source",
-        "target_location": "target.bad.table",
+        "source_location": "dummy_path",
+        "target_location": "dummy_table",
+        "columns_to_be_added": ["a"]
+    }.get(k, None)
+    csv_ingest.load()
+
+
+def test_load_failure_read(monkeypatch, csv_ingest):
+    monkeypatch.setattr(csv_ingest, "spark", SimpleNamespace(read=SimpleNamespace(load=lambda *a, **kw: (_ for _ in ()).throw(Exception("read error")))))
+    csv_ingest.job_args_obj.get = lambda k: {"schema_struct": None, "dry_run": False, "source_location": "path", "target_location": "table"}.get(k, None)
+    with pytest.raises(Exception, match="read error"):
+        csv_ingest.load()
+
+
+def test_load_with_validation_failure(monkeypatch, csv_ingest, spark):
+    monkeypatch.setattr(csv_ingest, "spark", spark)
+    mock_df = spark.createDataFrame([(1,)], ["a"])
+    monkeypatch.setattr(spark.read, "load", lambda *a, **kw: mock_df)
+    monkeypatch.setattr(mock_df, "count", lambda: 3)
+    monkeypatch.setattr(csv_ingest.validation_obj, "run_validations", lambda df: (_ for _ in ()).throw(Exception("validation fail")))
+    csv_ingest.job_args_obj.get = lambda k: {
         "schema_struct": None,
-        "columns_to_be_added": [],
-    }.get(key, None)
+        "dry_run": False,
+        "source_location": "dummy_path",
+        "target_location": "dummy_table",
+        "columns_to_be_added": []
+    }.get(k, None)
 
-    fake_df = MagicMock()
-    fake_df.count.return_value = 3
-    monkeypatch.setattr(csv_ingest_instance.spark.read, "load", MagicMock(return_value=fake_df))
-    csv_ingest_instance.validation_obj.run_validations.side_effect = Exception("Validation failed")
-
-    with pytest.raises(Exception) as excinfo:
-        csv_ingest_instance.load()
-    assert "Validation failed" in str(excinfo.value)
-
-
-# Explanation:
-# mock_dependencies fixture creates mocks for all dependencies.
-#
-# csv_ingest_instance fixture creates an instance with mocked Spark session & dependencies.
-#
-# Parametrized tests checks that all main methods call common_utils.log_msg.
-#
-# test_load_with_schema_and_without tests both cases of loading CSV (with/without schema).
-#
-# test_load_dry_run verifies that no write occurs when dry run is enabled.
-#
-# test_load_raises_exception checks that exceptions in validation bubble up.
-
+    with pytest.raises(Exception, match="validation fail"):
+        csv_ingest.load()

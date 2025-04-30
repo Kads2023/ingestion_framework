@@ -1,145 +1,82 @@
 import pytest
+import types
 from edap_ingest.ingest.ingest_factory import IngestFactory
 from edap_ingest.ingest.base_ingest import BaseIngest
 
 
 class DummyIngest(BaseIngest):
     def run_load(self):
-        self.common_utils.log_msg("DummyIngest.run_load called.")
+        self.common_utils.log_msg("DummyIngest.run_load() called")
 
 
-@pytest.fixture
-def dummy_common_utils():
-    class DummyCommonUtils:
-        def log_msg(self, msg):
-            print(f"LOG: {msg}")
-    return DummyCommonUtils()
+class DummyCommonUtils:
+    def __init__(self):
+        self.logs = []
+
+    def log_msg(self, msg, passed_logger_type=None):
+        self.logs.append(msg)
+
+    def get_logs(self):
+        return self.logs
 
 
-@pytest.fixture
-def dummy_process_monitoring():
-    class DummyProcessMonitoring:
-        pass
-    return DummyProcessMonitoring()
+@pytest.mark.parametrize("ingest_type", ["csv", "json", "parquet"])
+def test_ingest_factory_success(monkeypatch, ingest_type):
+    dummy_utils = DummyCommonUtils()
 
+    class DummyInputArgs:
+        def get(self, key):
+            return ingest_type if key == "ingest_type" else ""
 
-@pytest.fixture
-def dummy_validation_utils():
-    class DummyValidationUtils:
-        pass
-    return DummyValidationUtils()
+    dummy_input_args = DummyInputArgs()
 
+    # Mock importlib.import_module to return a dummy module
+    dummy_module = types.SimpleNamespace()
+    class_name = f"{ingest_type.capitalize()}Ingest"
+    setattr(dummy_module, class_name, DummyIngest)
+    monkeypatch.setattr("importlib.import_module", lambda path: dummy_module)
 
-@pytest.fixture
-def dummy_dbutils():
-    class DummyDbUtils:
-        pass
-    return DummyDbUtils()
-
-
-@pytest.mark.parametrize(
-    "ingest_type, expect_success",
-    [
-        ("dummy", True),   # Should work fine
-        ("invalid", False)  # Should fail (class not found)
-    ]
-)
-def test_start_load(
-    monkeypatch,
-    ingest_type,
-    expect_success,
-    dummy_common_utils,
-    dummy_process_monitoring,
-    dummy_validation_utils,
-    dummy_dbutils
-):
     factory = IngestFactory()
-
-    input_args = {"ingest_type": ingest_type}
-    job_args = {"job_id": 123}
-
-    # Setup dummy module
-    class DummyModule:
-        DummyIngest = DummyIngest
-
-    # Monkeypatch importlib.import_module
-    monkeypatch.setattr("importlib.import_module", lambda name: DummyModule)
-
-    # Monkeypatch getattr differently based on tests case
-    def fake_getattr(module, name, default=None):
-        if expect_success:
-            return getattr(module, "DummyIngest", default)
-        else:
-            return None  # Simulate class not found
-
-    monkeypatch.setattr("builtins.getattr", fake_getattr)
-
-    if expect_success:
-        # Act
-        factory.start_load(
-            input_args,
-            job_args,
-            dummy_common_utils,
-            dummy_process_monitoring,
-            dummy_validation_utils,
-            dummy_dbutils
-        )
-    else:
-        # Act + Assert
-        with pytest.raises(TypeError):
-            factory.start_load(
-                input_args,
-                job_args,
-                dummy_common_utils,
-                dummy_process_monitoring,
-                dummy_validation_utils,
-                dummy_dbutils
-            )
-# What's Happening Here:
-# Single tests function: handles both success and failure flows.
-#
-# Parametrized with @pytest.mark.parametrize.
-#
-# Monkeypatch both importlib.import_module and getattr.
-#
-# If expect_success is True → expect start_load() to work fine.
-#
-# If expect_success is False → expect it to raise TypeError because class_ref would be None.
-#
-# ✅ Full coverage: success + failure paths.
-#
-# ✅ No real imports (everything faked).
-#
-# ✅ Reusable fixtures for all dependencies.
-#
-# ⚡ Bonus Tip:
-# If you want even stronger checks, you can capture logs using capsys and assert that "DummyIngest.run_load called." appears in the console!
-#
-# Example:
-#
-# python
-# Copy
-# Edit
-def test_logging_output(capsys, monkeypatch, dummy_common_utils, dummy_process_monitoring, dummy_validation_utils, dummy_dbutils):
-    factory = IngestFactory()
-
-    input_args = {"ingest_type": "dummy"}
-    job_args = {}
-
-    class DummyModule:
-        DummyIngest = DummyIngest
-
-    monkeypatch.setattr("importlib.import_module", lambda name: DummyModule)
-    monkeypatch.setattr("builtins.getattr", lambda module, name, default=None: getattr(module, "DummyIngest", default))
-
     factory.start_load(
-        input_args,
-        job_args,
-        dummy_common_utils,
-        dummy_process_monitoring,
-        dummy_validation_utils,
-        dummy_dbutils
+        dummy_input_args,
+        passed_job_args={},
+        passed_common_utils=dummy_utils,
+        passed_process_monitoring=None,
+        passed_validation_utils=None,
+        passed_dbutils=None
     )
 
-    captured = capsys.readouterr()
-    assert "DummyIngest.run_load called." in captured.out
+    logs = dummy_utils.get_logs()
+    assert any("DummyIngest.run_load()" in log for log in logs)
+
+
+@pytest.mark.parametrize("scenario, import_error, class_missing", [
+    ("import_error", True, False),
+    ("class_missing", False, True)
+])
+def test_ingest_factory_failures(monkeypatch, scenario, import_error, class_missing):
+    dummy_utils = DummyCommonUtils()
+
+    class DummyInputArgs:
+        def get(self, key):
+            return "csv" if key == "ingest_type" else ""
+
+    dummy_input_args = DummyInputArgs()
+
+    if import_error:
+        monkeypatch.setattr("importlib.import_module", lambda path: (_ for _ in ()).throw(ImportError("module not found")))
+    elif class_missing:
+        dummy_module = types.SimpleNamespace()
+        monkeypatch.setattr("importlib.import_module", lambda path: dummy_module)
+
+    factory = IngestFactory()
+
+    with pytest.raises(Exception):
+        factory.start_load(
+            dummy_input_args,
+            passed_job_args={},
+            passed_common_utils=dummy_utils,
+            passed_process_monitoring=None,
+            passed_validation_utils=None,
+            passed_dbutils=None
+        )
