@@ -142,7 +142,7 @@ def test_load_raises_exception(monkeypatch, csv_ingest_instance):
 #
 # csv_ingest_instance fixture creates an instance with mocked Spark session & dependencies.
 #
-# Parametrized test checks that all main methods call common_utils.log_msg.
+# Parametrized tests checks that all main methods call common_utils.log_msg.
 #
 # test_load_with_schema_and_without tests both cases of loading CSV (with/without schema).
 #

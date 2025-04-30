@@ -151,6 +151,6 @@ def test_run_load_failure(monkeypatch, base_ingest):
 # Error simulation for testing run_load failure.
 #
 # ⚡ Bonus
-# If you want, we can also add pytest.mark.parametrize to test some different input variations for exit_without_errors, collate_columns_to_add, or form_source_and_target_locations.
+# If you want, we can also add pytest.mark.parametrize to tests some different input variations for exit_without_errors, collate_columns_to_add, or form_source_and_target_locations.
 # Would you like me to extend it even further with parametrize examples too? 🚀
 # (Example: Different kinds of audit_columns, table_columns, file names, etc.)

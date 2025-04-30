@@ -65,7 +65,7 @@ def test_start_load(
     # Monkeypatch importlib.import_module
     monkeypatch.setattr("importlib.import_module", lambda name: DummyModule)
 
-    # Monkeypatch getattr differently based on test case
+    # Monkeypatch getattr differently based on tests case
     def fake_getattr(module, name, default=None):
         if expect_success:
             return getattr(module, "DummyIngest", default)
@@ -96,7 +96,7 @@ def test_start_load(
                 dummy_dbutils
             )
 # What's Happening Here:
-# Single test function: handles both success and failure flows.
+# Single tests function: handles both success and failure flows.
 #
 # Parametrized with @pytest.mark.parametrize.
 #
