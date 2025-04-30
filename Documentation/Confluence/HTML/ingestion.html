@@ -1,0 +1,161 @@
+<h1>EDAP Ingestion Framework - Design Documentation</h1>
+
+<h2>🧭 Purpose</h2>
+<p>This document outlines the design of the <code>edap_ingest</code> framework used for modular, scalable ingestion of structured data (e.g., CSV) into the enterprise data platform. It supports dynamic class-based ingestion and integrates with Databricks.</p>
+
+<hr>
+
+<h2>🏗️ High-Level Architecture</h2>
+<table border="1">
+  <thead>
+    <tr>
+      <th>Layer</th>
+      <th>Component</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Interface</strong></td>
+      <td>IngestFactory</td>
+      <td>Entry point for ingestion jobs. Dynamically loads classes based on input parameters.</td>
+    </tr>
+    <tr>
+      <td><strong>Core Logic</strong></td>
+      <td>BaseIngest</td>
+      <td>Defines reusable ingestion flow and utilities (config, paths, schema, pre/post hooks).</td>
+    </tr>
+    <tr>
+      <td><strong>Extension</strong></td>
+      <td>CsvIngest</td>
+      <td>Implements CSV-specific loading logic by extending BaseIngest.</td>
+    </tr>
+    <tr>
+      <td><strong>Utilities</strong></td>
+      <td>ingestion_defaults.py</td>
+      <td>Provides defaults and helper functions.</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr>
+
+<h2>📌 Key Design Principles</h2>
+<ul>
+  <li><strong>Factory Pattern</strong>: Used for dynamic instantiation of ingestion classes.</li>
+  <li><strong>Object-Oriented Design</strong>: Promotes reuse and extension via inheritance and polymorphism.</li>
+  <li><strong>Separation of Concerns</strong>: Each module has a well-defined role (e.g., config management, schema handling).</li>
+  <li><strong>Plug-and-Play</strong>: Easily extendible for additional formats (e.g., JSON, Parquet).</li>
+</ul>
+
+<hr>
+
+<h2>⚙️ Ingestion Flow</h2>
+
+<pre>
+flowchart TD
+    A[User Trigger: IngestFactory.start_load()] --> B[Dynamic Import: ingest_type_ingest.py]
+    B --> C[Class Instantiation: CsvIngest()]
+    C --> D[CsvIngest.run_load()]
+    D --> E[pre_load()]
+    E --> F[load()]
+    F --> G[post_load()]
+</pre>
+<p>Each step delegates to standardized methods in <code>BaseIngest</code>, which can be overridden or extended.</p>
+
+<hr>
+
+<h2>🧬 BaseIngest Responsibilities</h2>
+<ul>
+  <li>Reads input parameters</li>
+  <li>Fetches common and table-level configurations</li>
+  <li>Validates source files and schema</li>
+  <li>Prepares source and target paths</li>
+  <li>Calls validation modules</li>
+  <li>Logs status to monitoring systems</li>
+</ul>
+
+<hr>
+
+<h2>🧪 CsvIngest: CSV-Specific Logic</h2>
+
+<pre>
+class CsvIngest(BaseIngest):
+    def load(self):
+        # Reads CSV using Spark
+        # Applies schema or infers it
+        # Writes data to Delta
+</pre>
+<ul>
+  <li>Adds support for <code>header</code>, <code>delimiter</code>, and <code>quote</code> options.</li>
+  <li>Supports dry-run mode for test validation without persistence.</li>
+</ul>
+
+<hr>
+
+<h2>🗂️ Configuration Structure</h2>
+<ul>
+  <li><strong>Input Parameters</strong> (from YAML/notebook widget):
+    <ul>
+      <li><code>ingest_type</code>, <code>run_date</code>, <code>source_base_location</code>, etc.</li>
+    </ul>
+  </li>
+  <li><strong>Common Config</strong>: Environment-level variables.</li>
+  <li><strong>Table Config</strong>: Schema definition, column mapping, etc.</li>
+</ul>
+
+<hr>
+
+<h2>🔍 Validation</h2>
+<p>Executed before the write operation. Supports schema, null check, type, and custom business validations.</p>
+
+<hr>
+
+<h2>📤 Extending to Other Formats</h2>
+<p>Steps to add new ingestion logic:</p>
+<ol>
+  <li>Create a new file: <code>&lt;type&gt;_ingest.py</code>.</li>
+  <li>Inherit from <code>BaseIngest</code>.</li>
+  <li>Implement <code>load()</code> with type-specific logic.</li>
+  <li>Trigger using <code>ingest_type=&lt;type&gt;</code>.</li>
+</ol>
+
+<hr>
+
+<h2>💡 Features</h2>
+<ul>
+  <li>Dynamic ingestion type resolution</li>
+  <li>Configurable via YAML</li>
+  <li>Spark/Delta-native</li>
+  <li>Dry-run mode</li>
+  <li>Rich logging and error handling</li>
+  <li>Easy integration into Databricks jobs</li>
+</ul>
+
+<hr>
+
+<h2>🛡️ Error Handling & Monitoring</h2>
+<ul>
+  <li>Errors logged via <code>common_utils</code>.</li>
+  <li>Job statuses updated in monitoring tables.</li>
+  <li>Graceful exits if already processed.</li>
+</ul>
+
+<hr>
+
+<h2>🔁 Reusability & Maintainability</h2>
+<ul>
+  <li>Minimal code duplication</li>
+  <li>Common logic abstracted in base class</li>
+  <li>Easy to test individual components</li>
+  <li>Changes isolated to specific ingestion type files</li>
+</ul>
+
+<hr>
+
+<h2>📎 References</h2>
+<ul>
+  <li><a href="https://docs.python.org/3/library/importlib.html">Python importlib</a></li>
+  <li><a href="https://docs.databricks.com/">Databricks Runtime Documentation</a></li>
+  <li><a href="https://spark.apache.org/docs/latest/api/python/reference/api/pyspark.sql.DataFrameReader.csv.html">Spark DataFrame Reader Options</a></li>
+</ul>
