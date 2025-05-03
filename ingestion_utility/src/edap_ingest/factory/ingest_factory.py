@@ -14,6 +14,7 @@ class IngestFactory:
 
     def start_load(
             self,
+            lc,
             passed_input_args,
             passed_job_args,
             passed_common_utils,
@@ -25,6 +26,7 @@ class IngestFactory:
         Dynamically loads and executes the ingestion class based on the `ingest_type` provided in input arguments.
 
         Args:
+            lc: log handler
             passed_input_args (dict): Input arguments containing ingest configuration, including `ingest_type`.
             passed_job_args (dict): Job-specific arguments required by the ingestion process.
             passed_common_utils (object): Utility object providing common functionalities like logging.
@@ -39,31 +41,50 @@ class IngestFactory:
         """
         this_module = "[IngestFactory.start_load()] -"
         ingest_type = str(passed_input_args.get("ingest_type")).strip().lower()
-        passed_common_utils.log_msg(
-            f"{this_module} "
-            f"ingest_type --> {ingest_type}"
-        )
-        class_file_name = f"{ingest_type}_ingest"
-        class_name = f"{ingest_type.capitalize()}Ingest"
-        class_module = importlib.import_module(
-            f"{self.ingest_class_base}.{class_file_name}"
-        )
-        class_ref = getattr(class_module, class_name, None)
-        passed_common_utils.log_msg(
-            f"{this_module} "
-            f"class_name --> {class_name}, "
-            f"type of class_ref --> {type(class_ref)}"
-        )
-        ingest_obj: BaseIngest = class_ref(
-            passed_input_args,
-            passed_job_args,
-            passed_common_utils,
-            passed_process_monitoring,
-            passed_validation_utils,
-            passed_dbutils
-        )
-        passed_common_utils.log_msg(
-            f"{this_module} "
-            f"type of ingest_obj --> {type(ingest_obj)}"
-        )
-        ingest_obj.run_load()
+        try:
+            lc.logger.info(
+                f"{this_module} "
+                f"ingest_type --> {ingest_type}"
+            )
+            class_file_name = f"{ingest_type}_ingest"
+            class_name = f"{ingest_type.capitalize()}Ingest"
+            class_module = importlib.import_module(
+                f"{self.ingest_class_base}.{class_file_name}"
+            )
+            class_ref = getattr(class_module, class_name, None)
+            lc.logger.info(
+                f"{this_module} "
+                f"class_name --> {class_name}, "
+                f"type of class_ref --> {type(class_ref)}"
+            )
+            ingest_obj: BaseIngest = class_ref(
+                lc,
+                passed_input_args,
+                passed_job_args,
+                passed_common_utils,
+                passed_process_monitoring,
+                passed_validation_utils,
+                passed_dbutils
+            )
+            lc.logger.info(
+                f"{this_module} "
+                f"type of ingest_obj --> {type(ingest_obj)}"
+            )
+            ingest_obj.run_load()
+        except ModuleNotFoundError as ex:
+            error_msg = (
+                f"{this_module} UNKNOWN: "
+                f"ingest_type --> {ingest_type}, "
+                f"Implementation available for "
+                f"CSV / JSON, ({ex})"
+            )
+            lc.logger.error(error_msg)
+            raise
+        except Exception as ex:
+            error_msg = (
+                f"{this_module} "
+                f"ingest_type --> {ingest_type}, "
+                f"({ex})"
+            )
+            lc.logger.error(error_msg)
+            raise

@@ -1,12 +1,12 @@
-from databricks.sdk.runtime import *
 from pyspark.sql import SparkSession
-import sys
-import yaml
-from pyspark.sql.types import *
+from pyspark.sql.types import (
+    StringType, IntegerType, LongType, ShortType, ByteType,
+    FloatType, DoubleType, DecimalType, BooleanType,
+    DateType, TimestampType, BinaryType,
+    ArrayType, MapType, StructType, DataType, StructField,
+)
 
 from edap_ingest.utils.ingestion_defaults import *
-
-from utils.ingestion_defaults import mandatory_input_params, default_values_for_input_params
 
 
 class BaseIngest:
@@ -63,6 +63,7 @@ class BaseIngest:
     """
     def __init__(
             self,
+            lc,
             input_args,
             job_args,
             common_utils,
@@ -83,6 +84,7 @@ class BaseIngest:
         """
         self.this_class_name = "BaseIngest"
         this_module = f"[{self.this_class_name}.__init__()] -"
+        self.lc = lc
         self.input_args_obj = input_args
         self.job_args_obj = job_args
         self.common_utils_obj = common_utils
@@ -139,7 +141,7 @@ class BaseIngest:
         this_module = f"[{self.this_class_name}.read_and_set_table_config()] -"
         self.lc.logger.info(f"Inside {this_module}")
         table_config_file_location = self.job_args_obj.get("table_config_file_location")
-        table_dict = self.common_utils_obj.read_yaml(table_config_file_location)
+        table_dict = self.common_utils_obj.read_yaml_file(table_config_file_location)
         for each_key in table_dict.keys():
             each_key_value = table_dict[each_key]
             self.job_args_obj.set(each_key, each_key_value)
@@ -195,26 +197,28 @@ class BaseIngest:
         this_module = f"[{self.this_class_name}.form_schema_from_dict()] -"
         self.lc.logger.info(f"Inside {this_module}")
         schema_dict = self.job_args_obj.get("schema")
-        struct_field_list = []
-        for each_column_name in schema_dict.keys():
-            column_data_type = schema_dict.get(
-                "data_type", default_column_data_type
-            ).lower().strip()
-            source_column_name = schema_dict.get(
-                "source_column_name", each_column_name
-            )
-            derived_column = schema_dict.get(
-                "derived_column", default_derived_column
-            )
-            if derived_column != 'True':
-                now_struct_field = StructField(
-                    source_column_name,
-                    type_mapping.get(column_data_type, default_type_mapping)
+        if schema_dict:
+            struct_field_list = []
+            for each_column_name in schema_dict.keys():
+                each_column_dict = schema_dict[each_column_name]
+                column_data_type = each_column_dict.get(
+                    "data_type", default_column_data_type
+                ).lower().strip()
+                source_column_name = each_column_dict.get(
+                    "source_column_name", each_column_name
                 )
-                struct_field_list.append(now_struct_field)
-            if len(struct_field_list) != 0:
-                schema_struct = StructType(struct_field_list)
-                self.job_args_obj.set("schema_struct", schema_struct)
+                derived_column = each_column_dict.get(
+                    "derived_column", default_derived_column
+                )
+                if derived_column != 'True':
+                    now_struct_field = StructField(
+                        source_column_name,
+                        self.job_args_obj.get_type(column_data_type)(),
+                    )
+                    struct_field_list.append(now_struct_field)
+                if len(struct_field_list) != 0:
+                    schema_struct = StructType(struct_field_list)
+                    self.job_args_obj.set("schema_struct", schema_struct)
 
     def form_source_and_target_locations(self):
         """

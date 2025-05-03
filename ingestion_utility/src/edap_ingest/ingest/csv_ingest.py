@@ -10,6 +10,7 @@ Classes:
 """
 
 from edap_ingest.ingest.base_ingest import BaseIngest
+import pyspark.sql.functions as F
 
 
 class CsvIngest(BaseIngest):
@@ -22,6 +23,7 @@ class CsvIngest(BaseIngest):
 
     def __init__(
         self,
+        lc,
         input_args,
         job_args,
         common_utils,
@@ -42,7 +44,7 @@ class CsvIngest(BaseIngest):
         """
         self.this_class_name = f"{type(self).__name__}"
         this_module = f"[{self.this_class_name}.__init__()] -"
-        super().__init__(input_args, job_args, common_utils, process_monitoring, validation_utils, dbutils)
+        super().__init__(lc, input_args, job_args, common_utils, process_monitoring, validation_utils, dbutils)
         self.lc.logger.info(f"Inside {this_module}")
 
     def read_and_set_input_args(self):
@@ -129,11 +131,11 @@ class CsvIngest(BaseIngest):
         )
 
         if schema_struct:
-            source_data = self.spark.read.load(
+            source_data = self.spark.read.schema(schema_struct).load(
                 source_location,
                 format="csv",
                 header="true"
-            ).schema(schema_struct)
+            )
         else:
             source_data = self.spark.read.load(
                 source_location,
@@ -151,7 +153,24 @@ class CsvIngest(BaseIngest):
             f"Inside {this_module} "
             f"columns_to_be_added --> {columns_to_be_added}"
         )
-
+        for each_item in columns_to_be_added:
+            column_name = each_item["column_name"]
+            data_type = each_item["data_type"]
+            value = each_item.get("column_name", None)
+            if value is None:
+                function_name = each_item.get("function_name", "")
+                if function_name == "hash":
+                    col_list = each_item["hash_of"]
+                    source_data = source_data.withColumn(
+                        column_name,
+                        F.sha2(F.concat_ws("_", *col_list), 256)
+                    )
+                elif function_name == "current_timestamp":
+                    source_data=source_data.withColumn(
+                        column_name, F.current_timestamp()
+                    )
+            else:
+                source_data = source_data.withColumn(column_name, F.lit(value))
         self.validation_obj.run_validations(source_data)
 
         if not dry_run:

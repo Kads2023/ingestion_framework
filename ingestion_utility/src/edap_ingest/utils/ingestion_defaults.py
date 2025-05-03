@@ -28,15 +28,11 @@ Dependencies:
 """
 
 from datetime import datetime
-from pyspark.sql.types import *
 
-default_error_type = "error"
 default_date_format = "%Y-%m-%d"
 
 default_column_data_type = "string"
 default_derived_column = False
-default_type_mapping = StringType()
-
 
 input_params_keys = [
     "env",
