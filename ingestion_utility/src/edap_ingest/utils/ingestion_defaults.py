@@ -37,10 +37,6 @@ default_column_data_type = "string"
 default_derived_column = False
 default_type_mapping = StringType()
 
-type_mapping = {
-    "string": StringType(),
-    "timestamp": TimestampType()
-}
 
 input_params_keys = [
     "env",

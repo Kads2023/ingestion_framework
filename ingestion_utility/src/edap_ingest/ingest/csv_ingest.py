@@ -43,7 +43,7 @@ class CsvIngest(BaseIngest):
         self.this_class_name = f"{type(self).__name__}"
         this_module = f"[{self.this_class_name}.__init__()] -"
         super().__init__(input_args, job_args, common_utils, process_monitoring, validation_utils, dbutils)
-        self.common_utils_obj.log_msg(f"Inside {this_module}")
+        self.lc.logger.info(f"Inside {this_module}")
 
     def read_and_set_input_args(self):
         """
@@ -51,7 +51,7 @@ class CsvIngest(BaseIngest):
         """
         this_module = f"[{self.this_class_name}.read_and_set_input_args()] -"
         super().read_and_set_input_args()
-        self.common_utils_obj.log_msg(f"Inside {this_module}")
+        self.lc.logger.info(f"Inside {this_module}")
 
     def read_and_set_common_config(self):
         """
@@ -59,7 +59,7 @@ class CsvIngest(BaseIngest):
         """
         this_module = f"[{self.this_class_name}.read_and_set_common_config()] -"
         super().read_and_set_common_config()
-        self.common_utils_obj.log_msg(f"Inside {this_module}")
+        self.lc.logger.info(f"Inside {this_module}")
 
     def read_and_set_table_config(self):
         """
@@ -67,7 +67,7 @@ class CsvIngest(BaseIngest):
         """
         this_module = f"[{self.this_class_name}.read_and_set_table_config()] -"
         super().read_and_set_table_config()
-        self.common_utils_obj.log_msg(f"Inside {this_module}")
+        self.lc.logger.info(f"Inside {this_module}")
 
     def pre_load(self):
         """
@@ -75,7 +75,7 @@ class CsvIngest(BaseIngest):
         """
         this_module = f"[{self.this_class_name}.pre_load()] -"
         super().pre_load()
-        self.common_utils_obj.log_msg(f"Inside {this_module}")
+        self.lc.logger.info(f"Inside {this_module}")
 
     def form_schema_from_dict(self):
         """
@@ -83,7 +83,7 @@ class CsvIngest(BaseIngest):
         """
         this_module = f"[{self.this_class_name}.form_schema_from_dict()] -"
         super().form_schema_from_dict()
-        self.common_utils_obj.log_msg(f"Inside {this_module}")
+        self.lc.logger.info(f"Inside {this_module}")
 
     def form_source_and_target_locations(self):
         """
@@ -91,7 +91,7 @@ class CsvIngest(BaseIngest):
         """
         this_module = f"[{self.this_class_name}.form_source_and_target_locations()] -"
         super().form_source_and_target_locations()
-        self.common_utils_obj.log_msg(f"Inside {this_module}")
+        self.lc.logger.info(f"Inside {this_module}")
 
     def collate_columns_to_add(self):
         """
@@ -99,7 +99,7 @@ class CsvIngest(BaseIngest):
         """
         this_module = f"[{self.this_class_name}.collate_columns_to_add()] -"
         super().collate_columns_to_add()
-        self.common_utils_obj.log_msg(f"Inside {this_module}")
+        self.lc.logger.info(f"Inside {this_module}")
 
     def load(self):
         """
@@ -120,7 +120,7 @@ class CsvIngest(BaseIngest):
         target_location = self.job_args_obj.get("target_location")
         schema_struct = self.job_args_obj.get("schema_struct")
 
-        self.common_utils_obj.log_msg(
+        self.lc.logger.info(
             f"Inside {this_module} "
             f"dry_run --> {dry_run}, "
             f"source_location --> {source_location}, "
@@ -147,7 +147,7 @@ class CsvIngest(BaseIngest):
         self.job_args_obj.set("run_row_count", source_row_counts)
 
         columns_to_be_added = self.job_args_obj.get("columns_to_be_added")
-        self.common_utils_obj.log_msg(
+        self.lc.logger.info(
             f"Inside {this_module} "
             f"columns_to_be_added --> {columns_to_be_added}"
         )
@@ -163,7 +163,7 @@ class CsvIngest(BaseIngest):
         """
         this_module = f"[{self.this_class_name}.post_load()] -"
         super().post_load()
-        self.common_utils_obj.log_msg(f"Inside {this_module}")
+        self.lc.logger.info(f"Inside {this_module}")
 
     def run_load(self):
         """
@@ -171,4 +171,4 @@ class CsvIngest(BaseIngest):
         """
         this_module = f"[{self.this_class_name}.run_load()] -"
         super().run_load()
-        self.common_utils_obj.log_msg(f"Inside {this_module}")
+        self.lc.logger.info(f"Inside {this_module}")

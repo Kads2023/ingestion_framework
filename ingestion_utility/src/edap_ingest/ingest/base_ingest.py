@@ -88,7 +88,7 @@ class BaseIngest:
         self.common_utils_obj = common_utils
         self.process_monitoring_obj = process_monitoring
         self.validation_obj = validation_utils
-        self.common_utils_obj.log_msg(f"Inside {this_module}")
+        self.lc.logger.info(f"Inside {this_module}")
 
         # Checks if dbutils is passed. if not
         # creates a handler for dbutils and returns the same
@@ -101,7 +101,7 @@ class BaseIngest:
             and sets them into the job arguments object for downstream usage.
         """
         this_module = f"[{self.this_class_name}.read_and_set_input_args()] -"
-        self.common_utils_obj.log_msg(f"Inside {this_module}")
+        self.lc.logger.info(f"Inside {this_module}")
         self.input_args_obj.set_mandatory_input_params(
             mandatory_input_params
         )
@@ -124,7 +124,7 @@ class BaseIngest:
             and populates the job arguments with common configuration values.
         """
         this_module = f"[{self.this_class_name}.read_and_set_common_config()] -"
-        self.common_utils_obj.log_msg(f"Inside {this_module}")
+        self.lc.logger.info(f"Inside {this_module}")
         common_config_file_location = self.job_args_obj.get("common_config_file_location")
         common_dict = self.common_utils_obj.read_yaml(common_config_file_location)
         for each_key in common_dict.keys():
@@ -137,7 +137,7 @@ class BaseIngest:
             and populates the job arguments with table-specific settings.
         """
         this_module = f"[{self.this_class_name}.read_and_set_table_config()] -"
-        self.common_utils_obj.log_msg(f"Inside {this_module}")
+        self.lc.logger.info(f"Inside {this_module}")
         table_config_file_location = self.job_args_obj.get("table_config_file_location")
         table_dict = self.common_utils_obj.read_yaml(table_config_file_location)
         for each_key in table_dict.keys():
@@ -167,7 +167,7 @@ class BaseIngest:
               and exits without processing if already completed.
         """
         this_module = f"[{self.this_class_name}.pre_load()] -"
-        self.common_utils_obj.log_msg(f"Inside {this_module}")
+        self.lc.logger.info(f"Inside {this_module}")
         self.read_and_set_input_args()
         self.read_and_set_common_config()
         self.read_and_set_table_config()
@@ -184,7 +184,7 @@ class BaseIngest:
                 f"ALREADY PROCESSED FOR "
                 f"run_date --> {run_date}"
             )
-            self.common_utils_obj.log_msg(message)
+            self.lc.logger.info(message)
             self.exit_without_errors(message)
 
     def form_schema_from_dict(self):
@@ -193,7 +193,7 @@ class BaseIngest:
             from the job arguments. Skips columns marked as derived.
         """
         this_module = f"[{self.this_class_name}.form_schema_from_dict()] -"
-        self.common_utils_obj.log_msg(f"Inside {this_module}")
+        self.lc.logger.info(f"Inside {this_module}")
         schema_dict = self.job_args_obj.get("schema")
         struct_field_list = []
         for each_column_name in schema_dict.keys():
@@ -222,7 +222,7 @@ class BaseIngest:
             and configuration parameters such as folder structure and file naming conventions.
         """
         this_module = f"[{self.this_class_name}.form_source_and_target_locations()] -"
-        self.common_utils_obj.log_msg(f"Inside {this_module}")
+        self.lc.logger.info(f"Inside {this_module}")
         run_date = self.job_args_obj.get("run_date")
         source_base_location = self.job_args_obj.get("source_base_location")
         source_reference_location = self.job_args_obj.get("source_reference_location")
@@ -260,7 +260,7 @@ class BaseIngest:
             to form a unified list of columns to be added during the load.
         """
         this_module = f"[{self.this_class_name}.collate_columns_to_add()] -"
-        self.common_utils_obj.log_msg(f"Inside {this_module}")
+        self.lc.logger.info(f"Inside {this_module}")
         audit_columns_to_be_added = self.job_args_obj.get(
             "audit_columns_to_be_added"
         )
@@ -280,7 +280,7 @@ class BaseIngest:
             - Prepares the list of columns to be added.
         """
         this_module = f"[{self.this_class_name}.load()] -"
-        self.common_utils_obj.log_msg(f"Inside {this_module}")
+        self.lc.logger.info(f"Inside {this_module}")
         self.form_source_and_target_locations()
         self.form_schema_from_dict()
         self.collate_columns_to_add()
@@ -290,7 +290,7 @@ class BaseIngest:
             Marks the job run status as 'Completed' after successful ingestion processing.
         """
         this_module = f"[{self.this_class_name}.post_load()] -"
-        self.common_utils_obj.log_msg(f"Inside {this_module}")
+        self.lc.logger.info(f"Inside {this_module}")
         self.process_monitoring_obj.insert_update_job_run_status("Completed")
 
     def run_load(self):
@@ -303,13 +303,13 @@ class BaseIngest:
             If any step fails, logs the error, marks the job as 'Failed', and raises an exception.
         """
         this_module = f"[{self.this_class_name}.run_load()] -"
-        self.common_utils_obj.log_msg(f"Inside {this_module}")
+        self.lc.logger.info(f"Inside {this_module}")
         try:
             self.pre_load()
             self.load()
             self.post_load()
         except Exception as e:
-            self.common_utils_obj.log_msg(
+            self.lc.logger.info(
                 f"{this_module} failed with --> {e}",
                 passed_logger_type=default_error_type
             )

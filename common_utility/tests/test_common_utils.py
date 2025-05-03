@@ -1,11 +1,18 @@
+import sys
+import types
+
 import pytest
-from unittest.mock import Mock, patch, mock_open
+from unittest.mock import MagicMock, mock_open
+from types import SimpleNamespace
+
 from datetime import datetime
 
 from ..tests.fixtures.mock_logger import MockLogger
 
 from edap_common.utils.common_utils import CommonUtils
-from edap_common.utils.constants import default_datetime_format, default_date_format
+from edap_common.utils.constants import *
+
+import edap_common.utils.common_utils
 
 
 @pytest.fixture(name="lc", autouse=True)
@@ -18,10 +25,18 @@ def fixture_common_utils(lc):
     return CommonUtils(lc)
 
 
-def test_get_current_time_success(common_utils, mock_logger):
-    time_str = common_utils.get_current_time()
-    datetime.strptime(time_str, default_datetime_format)
-    mock_logger.logger.info.assert_called()
+@pytest.fixture(name="dbutils", autouse=True)
+def fixture_dbutils(lc):
+    return MagicMock()
+
+
+@pytest.fixture
+def dummy_args():
+    return {
+        "yaml": SimpleNamespace(
+            safe_load=lambda loc: {"key", "value"},
+        )
+    }
 
 
 @pytest.mark.parametrize(
@@ -65,23 +80,106 @@ def test_get_date_split_success(common_utils, date_str, expected):
 
 
 @pytest.mark.parametrize(
-    "date_str",
+    "date_str, error_type",
     [
-        "invalid-date",
-        "",
+        ("2024-0430", Exception),
+        (2025, TypeError),
+        ("", Exception),
     ]
 )
-def test_get_date_split_failure(common_utils, date_str):
-    with pytest.raises(Exception):
+def test_get_date_split_fail(common_utils, date_str, error_type):
+    with pytest.raises(error_type):
         common_utils.get_date_split(date_str)
 
 
-def test_read_yaml_file_success(common_utils):
+def test_check_and_set_dbutils_creates(monkeypatch, common_utils):
+    if "pyspark.dbutils" in sys.modules:
+        del sys.modules["pyspark.dbutils"]
+    mock_dbutils = types.ModuleType("pyspark.dbutils")
+
+    class MockDBUtils:
+        def __init__(self, spark=None):
+            self.spark = spark
+            self.mocked = True
+
+    mock_dbutils.DBUtils = MockDBUtils
+    sys.modules["pyspark.dbutils"] = mock_dbutils
+    common_utils.check_and_set_dbutils(dbutils=None)
+    if "pyspark.dbutils" in sys.modules:
+        del sys.modules["pyspark.dbutils"]
+
+
+def test_check_and_set_dbutils_mnfe(monkeypatch, common_utils):
+    if "pyspark.dbutils" in sys.modules:
+        del sys.modules["pyspark.dbutils"]
+    mock_dbutils_mnfe = types.ModuleType("pyspark.dbutils")
+
+    class MockDBUtilsM:
+        def __init__(self, spark=None):
+            self.spark = spark
+            self.mocked = True
+            raise ModuleNotFoundError("mock error")
+
+    mock_dbutils_mnfe.DBUtils = MockDBUtilsM
+    sys.modules["pyspark.dbutils"] = mock_dbutils_mnfe
+    with pytest.raises(ModuleNotFoundError):
+        common_utils.check_and_set_dbutils(dbutils=None)
+    if "pyspark.dbutils" in sys.modules:
+        del sys.modules["pyspark.dbutils"]
+
+
+def test_check_and_set_dbutils_exception(monkeypatch, common_utils):
+    if "pyspark.dbutils" in sys.modules:
+        del sys.modules["pyspark.dbutils"]
+    mock_dbutils_excep = types.ModuleType("pyspark.dbutils")
+
+    class MockDBUtilsE:
+        def __init__(self, spark=None):
+            self.spark = spark
+            self.mocked = True
+            raise Exception("mock error")
+
+    mock_dbutils_excep.DBUtils = MockDBUtilsE
+
+    sys.modules["pyspark.dbutils"] = mock_dbutils_excep
+    with pytest.raises(Exception):
+        common_utils.check_and_set_dbutils(dbutils=None)
+    if "pyspark.dbutils" in sys.modules:
+        del sys.modules["pyspark.dbutils"]
+
+
+def test_check_and_set_dbutils_success(dbutils, common_utils):
+    common_utils.check_and_set_dbutils(dbutils)
+
+
+def test_get_current_time_success(common_utils, mock_logger):
+    time_str = common_utils.get_current_time()
+    datetime.strptime(time_str, default_datetime_format)
+    mock_logger.logger.info.assert_called()
+
+
+def test_read_yaml_file_success(monkeypatch, dummy_args, common_utils):
     mock_yaml_data = "key: value"
-    with patch("builtins.open", mock_open(read_data=mock_yaml_data)):
-        with patch("yaml.safe_load", return_value={"key": "value"}):
-            result = common_utils.read_yaml_file("dummy.yaml")
-            assert result == {"key": "value"}
+
+    monkeypatch.setattr(
+        edap_common.utils.common_utils, "open", mock_open(read_data=mock_yaml_data)
+    )
+
+    monkeypatch.setattr(edap_common.utils.common_utils, "yaml", dummy_args["yaml"])
+    result = common_utils.read_yaml_file("dummy.yaml")
+    assert result == {"key": "value"}
+
+
+@pytest.mark.parametrize(
+    "file_path, error_type",
+    [
+        (2025, TypeError),
+        ("", Exception),
+    ]
+)
+def test_read_yaml_file_fail(common_utils, file_path, error_type):
+    with pytest.raises(error_type):
+        common_utils.read_yaml_file(file_path)
 
 
 def test_read_yaml_file_failure(common_utils):
