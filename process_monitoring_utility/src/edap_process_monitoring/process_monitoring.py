@@ -58,11 +58,9 @@ class ProcessMonitoring:
 
     def __init__(self, lc, common_utils, job_args):
         self.this_class_name = f"{type(self).__name__}"
-        this_module = f"[{self.this_class_name}.__init__()] -"
         self.lc = lc
         self.job_args_obj = job_args
         self.common_utils = common_utils
-
         self.schema = StructType([])
         self.empty_rdd = self.spark.sparkContext.emptyRDD()
         self.empty_df = self.spark.createDataFrame(self.empty_rdd, self.schema)
@@ -84,11 +82,10 @@ class ProcessMonitoring:
     @retry_on_exception(exceptions=(pyodbc.Error,), max_attempts=3, delay_seconds=2, backoff_factor=2.0, logger=None)
     def execute_query_and_get_results(self, passed_query, param_dict=None, param_order=None, fetch_results=True):
         """
-        Executes a SQL query securely using parameterized input.
-        Retries on database errors.
+        Executes a SQL query securely using parameterized input with '?' placeholders.
 
         Args:
-            passed_query (str): SQL query string with @param placeholders.
+            passed_query (str): SQL query string with '?' placeholders.
             param_dict (dict, optional): Dictionary of parameters.
             param_order (list, optional): Order of parameters in the SQL statement.
             fetch_results (bool): If True, fetch results as a Spark DataFrame.
@@ -125,29 +122,29 @@ class ProcessMonitoring:
         """
         Retrieves and sets the job ID from the job details table based on provided parameters.
         """
-        this_module = f"[{self.this_class_name}.get_and_set_job_id()] -"
         job_details_table_name = self.job_args_obj.get("job_details_table_name")
         load_type = self.job_args_obj.get("load_type")
         source_system = self.job_args_obj.get("source_system")
         source = self.job_args_obj.get("source")
         source_type = self.job_args_obj.get("source_type")
         query_to_execute = (
-            f"SELECT job_id FROM {job_details_table_name} WHERE source_system = :source_system AND source = :source AND source_type = :source_type AND load_type = :load_type"
+            f"SELECT job_id FROM {job_details_table_name} WHERE source_system = ? AND source = ? AND source_type = ? AND load_type = ?"
         )
+        param_order = ["source_system", "source", "source_type", "load_type"]
         param_dict = {
             "source_system": source_system,
             "source": source,
             "source_type": source_type,
             "load_type": load_type,
         }
-        job_details = self.execute_query_and_get_results(query_to_execute, param_dict=param_dict)
+        job_details = self.execute_query_and_get_results(query_to_execute, param_dict=param_dict, param_order=param_order)
         job_details_count = job_details.count()
         job_details_list = job_details.collect()
         if job_details_count == 1:
             job_id = job_details_list[0]["job_id"]
             self.job_args_obj.set("job_id", job_id)
         else:
-            error_msg = f"{this_module} job_details_count --> {job_details_count}, job_details_count != 1, job_details_list --> {job_details_list}"
+            error_msg = f"job_details_count --> {job_details_count}, job_details_count != 1, job_details_list --> {job_details_list}"
             self.lc.logger.error(error_msg)
             if raise_exception:
                 raise Exception(error_msg)
@@ -156,103 +153,53 @@ class ProcessMonitoring:
         """
         Inserts job details into the job details table.
         """
-        this_module = f"[{self.this_class_name}.insert_job_details()] -"
         job_details_table_name = self.job_args_obj.get("job_details_table_name")
-        env = self.job_args_obj.get("env")
-        job_name = self.job_args_obj.get("job_name")
-        frequency = self.job_args_obj.get("frequency")
-        load_type = self.job_args_obj.get("load_type")
-        source_system = self.job_args_obj.get("source_system")
-        source = self.job_args_obj.get("source")
-        source_type = self.job_args_obj.get("source_type")
-        now_current_time = self.common_utils.get_current_time()
+        now = self.common_utils.get_current_time()
+        fields = ["env", "job_name", "frequency", "load_type", "source_system", "source", "source_type"]
+        values = [self.job_args_obj.get(field) for field in fields]
+        param_dict = dict(zip(fields, values))
+        param_dict.update({"_created": now, "_modified": now})
         query_to_execute = (
             f"INSERT INTO {job_details_table_name} (_created, _modified, env, job_name, frequency, load_type, source_system, source, source_type) "
-            f"VALUES(CAST(:_created AS DATETIME), CAST(:_modified AS DATETIME), :env, :job_name, :frequency, :load_type, :source_system, :source, :source_type)"
+            f"VALUES(CAST(? AS DATETIME), CAST(? AS DATETIME), ?, ?, ?, ?, ?, ?, ?)"
         )
-        param_dict = {
-            "_created": now_current_time,
-            "_modified": now_current_time,
-            "env": env,
-            "job_name": job_name,
-            "frequency": frequency,
-            "load_type": load_type,
-            "source_system": source_system,
-            "source": source,
-            "source_type": source_type,
-        }
-        self.execute_query_and_get_results(query_to_execute, param_dict=param_dict, fetch_results=False)
-
-    def check_and_get_job_id(self):
-        """
-        Checks and retrieves the job ID if not already set.
-        """
-        this_module = f"[{self.this_class_name}.check_and_get_job_id()] -"
-        self.get_and_set_job_id()
-        job_id = self.job_args_obj.get("job_id")
-        if job_id == "":
-            self.insert_job_details()
-            self.get_and_set_job_id(raise_exception=True)
+        param_order = ["_created", "_modified"] + fields
+        self.execute_query_and_get_results(query_to_execute, param_dict=param_dict, param_order=param_order, fetch_results=False)
 
     def check_already_processed(self, passed_job_id="", passed_run_date=""):
         """
         Checks if a job has already been processed based on job ID and run date.
         """
-        this_module = f"[{self.this_class_name}.check_already_processed()] -"
         job_run_details_table_name = self.job_args_obj.get("job_run_details_table_name")
-        self.common_utils.validate_function_param(
-            this_module,
-            {
-                "passed_job_id": {"input_value": passed_job_id, "data_type": "str"},
-                "passed_run_date": {"input_value": passed_run_date, "data_type": "str"},
-            },
-        )
-        if passed_job_id:
-            job_id = passed_job_id
-        else:
-            job_id = self.job_args_obj.get("job_id")
-
-        if passed_run_date:
-            run_date = passed_run_date
-        else:
-            run_date = self.job_args_obj.get("run_date")
-        
+        job_id = passed_job_id or self.job_args_obj.get("job_id")
+        run_date = passed_run_date or self.job_args_obj.get("run_date")
         query_to_execute = (
-            f"SELECT job_id, run_status, run_error_detail FROM {job_run_details_table_name} WHERE job_id = :job_id AND run_date = :run_date AND UPPER(run_status) = 'COMPLETED'"
+            f"SELECT job_id, run_status, run_error_detail FROM {job_run_details_table_name} WHERE job_id = ? AND run_date = ? AND UPPER(run_status) = 'COMPLETED'"
         )
         param_dict = {"job_id": job_id, "run_date": run_date}
-        job_completed_details = self.execute_query_and_get_results(query_to_execute, param_dict=param_dict)
-        
-        job_already_completed = False
-        if job_completed_details.count() == 1:
-            job_already_completed = True
+        param_order = ["job_id", "run_date"]
+        job_completed_details = self.execute_query_and_get_results(query_to_execute, param_dict=param_dict, param_order=param_order)
+        job_already_completed = job_completed_details.count() == 1
         self.job_args_obj.set(f"{job_id}_completed", job_already_completed)
 
     def get_and_set_run_id(self):
         """
         Retrieves and sets the run ID for the current job run.
         """
-        this_module = f"[{self.this_class_name}.get_and_set_run_id()] -"
         job_run_details_table_name = self.job_args_obj.get("job_run_details_table_name")
         job_id = self.job_args_obj.get("job_id")
         run_date = self.job_args_obj.get("run_date")
         run_start_time = self.job_args_obj.get("run_start_time")
-        
         query_to_execute = (
-            f"SELECT run_id FROM {job_run_details_table_name} WHERE job_id = :job_id AND run_start_time = CAST(:run_start_time AS DATETIME) AND run_date = :run_date"
+            f"SELECT run_id FROM {job_run_details_table_name} WHERE job_id = ? AND run_start_time = CAST(? AS DATETIME) AND run_date = ?"
         )
         param_dict = {"job_id": job_id, "run_start_time": run_start_time, "run_date": run_date}
-        run_details = self.execute_query_and_get_results(query_to_execute, param_dict=param_dict)
-        run_details_count = run_details.count()
-        run_details_list = run_details.collect()
-        
-        if run_details_count == 1:
-            run_id = self.job_args_obj.get("run_id")
-            self.job_args_obj.set("run_id", run_id)
+        param_order = ["job_id", "run_start_time", "run_date"]
+        run_details = self.execute_query_and_get_results(query_to_execute, param_dict=param_dict, param_order=param_order)
+        if run_details.count() == 1:
+            self.job_args_obj.set("run_id", run_details.collect()[0]["run_id"])
         else:
-            error_msg = (
-                f"{this_module} run_details_count --> {run_details_count}, run_details_count != 1, run_details_list --> {run_details_list}"
-            )
+            error_msg = f"Run ID not found or not unique. run_details_count --> {run_details.count()}"
             self.lc.logger.error(error_msg)
             raise Exception(error_msg)
 
@@ -260,34 +207,27 @@ class ProcessMonitoring:
         """
         Inserts or updates the job run status in the job run details table.
         """
-        this_module = f"[{self.this_class_name}.insert_update_job_run_status()] -"
-        self.common_utils.validate_function_param(
-            this_module,
-            {
-                "passed_status": {"input_value": passed_status, "data_type": "str", "check_empty": True},
-                "passed_comments": {"input_value": passed_comments, "data_type": "str"},
-            },
-        )
         job_run_details_table_name = self.job_args_obj.get("job_run_details_table_name")
         job_id = self.job_args_obj.get("job_id")
         run_id = self.job_args_obj.get("run_id")
         run_date = self.job_args_obj.get("run_date")
         run_start_time = self.job_args_obj.get("run_start_time")
         run_row_count = self.job_args_obj.get("run_row_count") or 0
-        now_current_time = self.common_utils.get_current_time()
-        
+        now = self.common_utils.get_current_time()
+
         if run_id == "":
             query_to_execute = (
                 f"INSERT INTO {job_run_details_table_name} "
                 f"(job_id, _created, _modified, run_start_time, run_end_time, run_date, run_row_count, run_status, run_error_detail) "
-                f"VALUES(:job_id, CAST(:_created AS DATETIME), CAST(:_modified AS DATETIME), CAST(:run_start_time AS DATETIME), CAST(:run_end_time AS DATETIME), CAST(:run_date AS DATE), :run_row_count, :run_status, :run_error_detail)"
+                f"VALUES(?, CAST(? AS DATETIME), CAST(? AS DATETIME), CAST(? AS DATETIME), CAST(? AS DATETIME), CAST(? AS DATE), ?, ?, ?)"
             )
+            param_order = ["job_id", "_created", "_modified", "run_start_time", "run_end_time", "run_date", "run_row_count", "run_status", "run_error_detail"]
             param_dict = {
                 "job_id": job_id,
-                "_created": now_current_time,
-                "_modified": now_current_time,
+                "_created": now,
+                "_modified": now,
                 "run_start_time": run_start_time,
-                "run_end_time": now_current_time,
+                "run_end_time": now,
                 "run_date": run_date,
                 "run_row_count": run_row_count,
                 "run_status": passed_status,
@@ -295,12 +235,13 @@ class ProcessMonitoring:
             }
         else:
             query_to_execute = (
-                f"UPDATE {job_run_details_table_name} SET _modified=CAST(:_modified AS DATETIME), run_end_time=CAST(:run_end_time AS DATETIME), "
-                f"run_row_count=:run_row_count, run_status=:run_status, run_error_detail=:run_error_detail WHERE run_id = :run_id AND job_id = :job_id"
+                f"UPDATE {job_run_details_table_name} SET _modified=CAST(? AS DATETIME), run_end_time=CAST(? AS DATETIME), "
+                f"run_row_count=?, run_status=?, run_error_detail=? WHERE run_id = ? AND job_id = ?"
             )
+            param_order = ["_modified", "run_end_time", "run_row_count", "run_status", "run_error_detail", "run_id", "job_id"]
             param_dict = {
-                "_modified": now_current_time,
-                "run_end_time": now_current_time,
+                "_modified": now,
+                "run_end_time": now,
                 "run_row_count": run_row_count,
                 "run_status": passed_status,
                 "run_error_detail": passed_comments,
@@ -308,6 +249,6 @@ class ProcessMonitoring:
                 "job_id": job_id,
             }
 
-        self.execute_query_and_get_results(query_to_execute, param_dict=param_dict, fetch_results=False)
+        self.execute_query_and_get_results(query_to_execute, param_dict=param_dict, param_order=param_order, fetch_results=False)
         if run_id == "":
             self.get_and_set_run_id()
