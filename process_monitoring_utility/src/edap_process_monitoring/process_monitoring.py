@@ -53,6 +53,29 @@ def retry_on_exception(
     return decorator_retry
 
 
+def log_query(self, query: str, param_order: list, param_dict: dict):
+    """
+    Logs the executed query with parameters substituted for debugging purposes.
+    This is not SQL injection safe and should only be used for debugging.
+    """
+    if not param_order or not param_dict:
+        print(f"[DEBUG] Executing Query: {query}")
+        return
+
+    try:
+        # Format parameters with simple representation
+        formatted_params = [repr(param_dict[k]) for k in param_order]
+        formatted_query = query
+        for val in formatted_params:
+            formatted_query = formatted_query.replace("?", val, 1)
+
+        print(f"[DEBUG] Executing Query: {formatted_query}")
+    except Exception as e:
+        print(f"[DEBUG] Error formatting query: {e}")
+        print(f"[DEBUG] Original Query: {query}, Params: {param_dict}")
+
+
+
 class ProcessMonitoring:
     spark = SparkSession.getActiveSession()
 
