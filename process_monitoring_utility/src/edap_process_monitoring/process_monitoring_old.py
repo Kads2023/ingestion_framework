@@ -6,8 +6,6 @@ from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType
 from azure.identity import DefaultAzureCredential
 
-default_error_type = "error"
-
 
 class ProcessMonitoring:
     spark = SparkSession.getActiveSession()
@@ -34,7 +32,7 @@ class ProcessMonitoring:
             "https://database.windows.net/.default"
         ).token.encode("UTF-16-LE")
         token_struct = struct.pack(
-            f"<I{len(token_bytes)s}", len(token_bytes), token_bytes
+            f"<I{len(token_bytes)}", len(token_bytes), token_bytes
         )
         SQL_COPT_SS_ACCESS_TOKEN = 1256
         conn = pyodbc.connect(
