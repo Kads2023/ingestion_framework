@@ -22,6 +22,10 @@ class ProcessMonitoring:
         self.empty_df = self.spark.createDataFrame(self.empty_rdd, self.schema)
         self.empty_dict = {}
 
+    def retry_helper(self, **kwargs):
+        return self.common_utils.retry_on_exception(**kwargs)
+
+    @retry_helper(exceptions=(pyodbc.Error, ConnectionError), max_attempts=3, delay_seconds=2)
     def get_conn(self):
         this_module = f"[{self.this_class_name}.get_conn()] -"
         connection_string = self.job_args_obj.get("process_monitoring_conn_str")
@@ -40,6 +44,7 @@ class ProcessMonitoring:
         )
         return conn
 
+    @retry_helper(exceptions=(pyodbc.Error, ), max_attempts=3, delay_seconds=2)
     def execute_query_and_get_results(self, passed_query, fetch_results=True):
         this_module = f"[{self.this_class_name}.execute_query_and_get_results()] -"
         dry_run = self.job_args_obj.get("dry_run")
