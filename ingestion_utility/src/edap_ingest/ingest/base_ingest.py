@@ -91,6 +91,7 @@ class BaseIngest:
         self.process_monitoring_obj = process_monitoring
         self.validation_obj = validation_utils
         self.lc.logger.info(f"Inside {this_module}")
+        self.raise_exception = True
 
         # Checks if dbutils is passed. if not
         # creates a handler for dbutils and returns the same
@@ -157,6 +158,7 @@ class BaseIngest:
             "Exited",
             passed_comments=passed_message
         )
+        self.raise_exception = False
         self.dbutils.notebook.exit(passed_message)
         # sys.exit(0)
 
@@ -313,18 +315,18 @@ class BaseIngest:
             self.load()
             self.post_load()
         except Exception as e:
-            self.lc.logger.info(
-                f"{this_module} failed with --> {e}",
-                passed_logger_type=default_error_type
+            self.lc.logger.error(
+                f"{this_module} failed with --> {e}"
             )
-            self.process_monitoring_obj.insert_update_job_run_status(
-                "Failed",
-                passed_comments=f"{e}".replace(
-                    '"', ''
-                ).replace(
-                    "'", ""
-                ).replace(
-                    'SELECT', 'S E L E C T'
+            if self.raise_exception:
+                self.process_monitoring_obj.insert_update_job_run_status(
+                    "Failed",
+                    passed_comments=f"{e}".replace(
+                        '"', ''
+                    ).replace(
+                        "'", ""
+                    ).replace(
+                        'SELECT', 'S E L E C T'
+                    )
                 )
-            )
-            raise Exception(e)
+                raise Exception(e)

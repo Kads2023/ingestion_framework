@@ -7,7 +7,6 @@ type mappings for Spark data types, and other reusable configurations
 to be used across the ingestion framework.
 
 Constants:
-    default_error_type (str): Default type assigned to errors ("error").
     default_date_format (str): Default date format ("%Y-%m-%d").
     default_column_data_type (str): Default data type for columns ("string").
     default_derived_column (bool): Default flag indicating whether a column is derived (False).
