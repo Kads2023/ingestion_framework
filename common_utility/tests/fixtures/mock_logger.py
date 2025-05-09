@@ -8,7 +8,7 @@ class MockLogger:
             print(log_string)
             pass
 
-        def warn(self, log_string):
+        def warning(self, log_string):
             print(log_string)
             pass
 

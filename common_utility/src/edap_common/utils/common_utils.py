@@ -1,6 +1,9 @@
 from pyspark.sql import SparkSession
 from datetime import datetime
 import yaml
+import functools
+import time
+
 
 from edap_common.utils.constants import *
 # from edap_common.utils.log_wrapper import LogWrapper
@@ -170,6 +173,46 @@ class CommonUtils:
                         f"{default_value}"
                     )
                     self.lc.logger.error(error_msg)
-                    raise Exception(error_msg)
+                    raise ValueError(error_msg)
 
+    def retry_on_exception(
+            self,
+            exceptions=(Exception,),
+            max_attempts=3,
+            delay_seconds=2,
+            backoff_factor=1.0,
+    ):
+        """
+        Retry decorator that retries a function if specified exceptions occur.
 
+        Args:
+            exceptions (tuple): Exception types to catch and retry on.
+            max_attempts (int): Maximum number of attempts before giving up.
+            delay_seconds (int): Initial delay between retries in seconds.
+            backoff_factor (float): Multiplier to increase delay each retry.
+
+        Returns:
+            Decorator that applies retry logic.
+        """
+
+        def decorator_retry(func):
+            @functools.wraps(func)
+            def wrapper_retry(*args, **kwargs):
+                attempts = 0
+                delay = delay_seconds
+                while attempts < max_attempts:
+                    try:
+                        return func(*args, **kwargs)
+                    except exceptions as e:
+                        attempts += 1
+                        if attempts == max_attempts:
+                            self.lc.logger.error(f"All {max_attempts} attempts failed: {e}")
+                            raise
+                        else:
+                            self.lc.logger.warning(
+                                f"Attempt {attempts} failed with {e}. Retrying in {delay} seconds..."
+                            )
+                        time.sleep(delay)
+                        delay *= backoff_factor
+            return wrapper_retry
+        return decorator_retry

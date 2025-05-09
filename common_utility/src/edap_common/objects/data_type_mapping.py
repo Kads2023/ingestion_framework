@@ -54,22 +54,14 @@ class DataTypeMapping:
                 },
             }
         )
-        try:
-            final_type_name = type_name.strip().lower()
-            if final_type_name in self.type_mapping.keys():
-                ret_value = self.type_mapping[final_type_name]
-                return ret_value
-            else:
-                error_msg = (
-                    f"{this_module} "
-                    f"Unsupported type: {type_name}"
-                )
-                self.lc.logger.error(error_msg)
-                raise ValueError(error_msg)
-        except Exception as e:
+        final_type_name = type_name.strip().lower()
+        if final_type_name in self.type_mapping.keys():
+            ret_value = self.type_mapping[final_type_name]
+            return ret_value
+        else:
             error_msg = (
                 f"{this_module} "
-                f"{type_name}, ({e})"
+                f"Unsupported type: {type_name}"
             )
             self.lc.logger.error(error_msg)
-            raise Exception(error_msg)
+            raise ValueError(error_msg)

@@ -62,3 +62,12 @@ class JobArgs:
             },
         )
         self.job_dict[passed_key] = passed_value
+
+    def get_job_dict(self):
+        this_module = f"[{self.this_class_name}.get_job_dict()] -"
+        self.lc.logger.info(
+            f"{this_module} "
+            f"job_dict --> "
+            f"{self.job_dict}"
+        )
+        return self.job_dict

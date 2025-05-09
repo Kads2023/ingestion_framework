@@ -30,6 +30,11 @@ def fixture_dbutils(lc):
     return MagicMock()
 
 
+@pytest.fixture(name="sleep", autouse=True)
+def fixture_sleep():
+    return MagicMock()
+
+
 @pytest.fixture
 def dummy_args():
     return {
@@ -174,7 +179,7 @@ def test_read_yaml_file_success(monkeypatch, dummy_args, common_utils):
     "file_path, error_type",
     [
         (2025, TypeError),
-        ("", Exception),
+        ("", ValueError),
     ]
 )
 def test_read_yaml_file_fail(common_utils, file_path, error_type):
@@ -200,12 +205,94 @@ def test_validate_function_param_success(common_utils, params_dict):
 
 
 @pytest.mark.parametrize(
-    "params_dict",
+    "params_dict, error_type",
     [
-        {"param1": {"input_value": "", "data_type": "str", "check_empty": True}},  # empty check
-        {"param2": {"input_value": "abc", "data_type": "int"}},                    # wrong type
+        ({"param1": {"input_value": "", "data_type": "str", "check_empty": True}}, ValueError),  # empty check
+        ({"param2": {"input_value": "abc", "data_type": "int"}}, TypeError),                    # wrong type
     ]
 )
-def test_validate_function_param_failure(common_utils, params_dict):
-    with pytest.raises(Exception):
+def test_validate_function_param_failure(common_utils, params_dict, error_type):
+    with pytest.raises(error_type):
         common_utils.validate_function_param("test_module", params_dict)
+
+
+def test_retry_decorator_success(monkeypatch, common_utils):
+    # Create a function that will succeed
+    def success_func():
+        return "Success"
+
+    # Apply the decorator
+    decorated_func = common_utils.retry_on_exception(max_attempts=3, delay_seconds=1)(success_func)
+
+    # Call the decorated function
+    result = decorated_func()
+
+    # Assert that the function was called only once, and it returned "Success"
+    assert result == "Success"
+
+
+def test_retry_decorator_failure(monkeypatch, common_utils, sleep):
+    # Create a function that will always raise an exception
+    def failing_func():
+        raise Exception("Test Exception")
+
+    # Apply the decorator
+    decorated_func = common_utils.retry_on_exception(max_attempts=3, delay_seconds=1)(failing_func)
+
+    # Mock time.sleep to avoid waiting in the test
+    monkeypatch.setattr(edap_common.utils.common_utils.time, 'sleep', sleep)
+
+    # Call the decorated function and check that it raises the exception after 3 retries
+    with pytest.raises(Exception):
+        decorated_func()
+
+    # Assert that time.sleep was called 2 times (retry attempts)
+    assert sleep.call_count == 2
+
+
+def test_retry_decorator_retry_count(monkeypatch, common_utils, sleep):
+    # Create a function that raises an exception in the first 2 calls and succeeds in the third
+    retry_attempts = 0
+
+    def retrying_func():
+        nonlocal retry_attempts
+        retry_attempts += 1
+        if retry_attempts < 3:
+            raise Exception("Test Exception")
+        return "Success"
+
+    # Apply the decorator
+    decorated_func = common_utils.retry_on_exception(max_attempts=3, delay_seconds=1)(retrying_func)
+
+    # Mock time.sleep to avoid delays during the test
+    monkeypatch.setattr(edap_common.utils.common_utils.time, 'sleep', sleep)
+
+    # Call the decorated function
+    result = decorated_func()
+
+    # Assert that the function eventually returns "Success"
+    assert result == "Success"
+
+    # Assert that time.sleep was called 2 times (after the first two failed attempts)
+    assert sleep.call_count == 2
+
+
+def test_retry_decorator_no_retry_on_success(monkeypatch, common_utils, sleep):
+    # Create a function that will succeed
+    def success_func():
+        return "Success"
+
+    # Apply the decorator
+    decorated_func = common_utils.retry_on_exception(max_attempts=3, delay_seconds=1)(success_func)
+
+    # Mock time.sleep to avoid delays
+    monkeypatch.setattr(edap_common.utils.common_utils.time, 'sleep', sleep)
+
+    # Call the decorated function
+    result = decorated_func()
+
+    # Assert that the function was called once and returned the correct result
+    assert result == "Success"
+
+    # Assert that time.sleep was never called because the function didn't fail
+    assert sleep.call_count == 0

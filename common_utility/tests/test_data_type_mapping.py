@@ -44,15 +44,15 @@ def test_get_type_success(data_type_mapper, input_type, expected_class):
 
 
 @pytest.mark.parametrize(
-    "input_type",
+    "input_type, error_type",
     [
-        "",            # empty string
-        "unknown",     # unsupported type
-        None,          # NoneType
+        ("", ValueError),     # empty string
+        ("unknown", ValueError),     # unsupported type
+        (None,TypeError)          # NoneType
     ]
 )
-def test_get_type_invalid_type(data_type_mapper, input_type):
-    with pytest.raises(Exception):
+def test_get_type_invalid_type(data_type_mapper, input_type, error_type):
+    with pytest.raises(error_type):
         data_type_mapper.get_type(input_type)
 
 

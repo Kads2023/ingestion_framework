@@ -72,7 +72,7 @@ def test_get_success(job_args, passed_key, expected_value):
 @pytest.mark.parametrize(
     "passed_key, error_type",
     [
-        ("", Exception),
+        ("", ValueError),
         (123, TypeError),
     ],
 )
@@ -101,11 +101,15 @@ def test_get_type_success(job_args, input_type, expected_class):
 @pytest.mark.parametrize(
     "passed_key, error_type",
     [
-        ("", Exception),
+        ("", ValueError),
         (123, TypeError),
-        ("string123", Exception),
+        ("string123", ValueError),
     ]
 )
 def test_get_type_success(job_args, passed_key, error_type):
     with pytest.raises(error_type):
         job_args.get_type(passed_key)
+
+
+def test_get_job_dict(job_args):
+    job_args.get_job_dict()
