@@ -32,7 +32,16 @@ class ProcessMonitoring:
     def retry_helper(self, **kwargs):
         return self.common_utils.retry_on_exception(**kwargs)
 
-    # @retry_helper(exceptions=(pyodbc.Error, ConnectionError), max_attempts=3, delay_seconds=2)
+    # @retry_helper(exceptions=(
+    #     OperationalError,
+    #     DBAPIError,
+    #     pyodbc.InterfaceError,
+    #     pyodbc.OperationalError,
+    #     ConnectionError,
+    #     ClientAuthenticationError,
+    #     CredentialUnavailableError,
+    #     TimeoutError,
+    # ), max_attempts=3, delay_seconds=2)
     def get_conn(self):
         """
         Establishes a secure connection to SQL Server using Azure AD access token.
@@ -50,7 +59,17 @@ class ProcessMonitoring:
             connect_args={"attrs_before": {SQL_COPT_SS_ACCESS_TOKEN: token_struct}},
         )
 
-    # @retry_helper(exceptions=(pyodbc.Error, ConnectionError), max_attempts=3, delay_seconds=2)
+    # @retry_helper(exceptions=(
+    #     OperationalError,
+    #     DBAPIError,  # filtered if needed
+    #     pyodbc.InterfaceError,
+    #     pyodbc.OperationalError,
+    #     ConnectionError,
+    #     ClientAuthenticationError,
+    #     CredentialUnavailableError,
+    #     TimeoutError,
+    #     SA_TimeoutError,
+    # ), max_attempts=3, delay_seconds=2)
     def execute_query_and_get_results(self, passed_query, param_dict, fetch_results=True):
         """
         Executes a SQL query securely using parameterized input with '?' placeholders.
