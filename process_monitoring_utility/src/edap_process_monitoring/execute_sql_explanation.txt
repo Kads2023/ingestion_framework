@@ -1,0 +1,83 @@
+Establishes a DB connection.
+
+Executes SQL with parameters (via SQLAlchemy).
+
+Optionally fetches results.
+
+Converts results to Pandas and then Spark DataFrame.
+
+So exceptions can come from:
+
+Connection/authentication issues (like get_conn)
+
+SQL execution (statement issues, timeouts)
+
+Result fetching or transformation
+
+✅ Retryable Exceptions for execute_query_and_get_results
+🔌 1. Connection Failures (inherited from get_conn())
+pyodbc.InterfaceError — cannot connect, DNS issue
+
+pyodbc.OperationalError — server unavailable, timeout
+
+ConnectionError — networking issue
+
+sqlalchemy.exc.OperationalError — wrapped DB connection errors
+
+azure.core.exceptions.ClientAuthenticationError
+
+azure.identity.CredentialUnavailableError
+
+TimeoutError
+
+🧾 2. SQL Execution Failures (Transient)
+sqlalchemy.exc.DBAPIError — wraps pyodbc.ProgrammingError, OperationalError, etc.
+
+Retry only if e.connection_invalidated is True
+
+pyodbc.OperationalError — deadlock, timeout, temporary lock contention
+
+sqlalchemy.exc.TimeoutError — timeout on long-running queries
+
+🧠 3. Result Fetching / Conversion Failures
+These are sometimes transient due to DB state or volume:
+
+pandas.errors.DatabaseError — very rare, if DBAPI fails mid-fetch
+
+MemoryError — retry only if the Spark node is auto-scaling (not common)
+
+🚫 Do NOT Retry On
+These usually reflect bugs or bad inputs:
+
+pyodbc.ProgrammingError — bad SQL syntax or invalid params
+
+ValueError, KeyError — likely due to parameter bugs
+
+sqlalchemy.exc.ArgumentError — bad query string or invalid bind
+
+TypeError — usually from bad param_dict formatting
+
+Anything from Spark or Pandas that's not transient
+
+✅ Suggested Retryable Exception List for execute_query_and_get_results
+python
+Copy
+Edit
+from sqlalchemy.exc import OperationalError, DBAPIError, TimeoutError as SA_TimeoutError
+from azure.core.exceptions import ClientAuthenticationError
+from azure.identity import CredentialUnavailableError
+import pyodbc
+
+RETRYABLE_QUERY_EXCEPTIONS = (
+    OperationalError,
+    DBAPIError,  # filtered if needed
+    pyodbc.InterfaceError,
+    pyodbc.OperationalError,
+    ConnectionError,
+    ClientAuthenticationError,
+    CredentialUnavailableError,
+    TimeoutError,
+    SA_TimeoutError,
+)
+⚠️ Optional: If you want to retry only certain DBAPIErrors, you can inspect e.connection_invalidated == True.
+

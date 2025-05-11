@@ -1,0 +1,59 @@
+what all exceptions can get_conn raise which is worth retrying
+
+
+ChatGPT said:
+Great question. When using get_conn() to connect to SQL Server via SQLAlchemy + pyODBC + Azure Identity, several classes of exceptions are worth retrying. Here’s a categorized list of the most relevant ones that can occur and are safe to retry:
+
+✅ Retryable Exceptions for get_conn()
+🔌 1. Connection Failures
+These happen due to network issues, DNS failures, or DB server unavailability:
+
+pyodbc.InterfaceError — e.g., “Data source name not found,” or “Unable to establish connection”
+
+pyodbc.OperationalError — e.g., “Login timeout expired,” “SQL Server is unavailable”
+
+ConnectionError — generic networking failures if raised elsewhere
+
+🔐 2. Azure Authentication Failures
+azure.core.exceptions.ClientAuthenticationError — transient issues when getting the token via ManagedIdentityCredential()
+
+azure.identity.CredentialUnavailableError — common in local dev or when the identity isn't ready
+
+⚙️ 3. SQLAlchemy/DBAPI Failures
+sqlalchemy.exc.OperationalError — includes timeouts, too many connections, server disconnects
+
+sqlalchemy.exc.DBAPIError — a catch-all for DBAPI-related errors (often wraps pyODBC errors)
+
+🌐 4. Timeouts / Temporary Unavailability
+TimeoutError — in rare cases from network or library internals
+
+🚫 Avoid Retrying on:
+These usually indicate coding or configuration issues and should not be retried:
+
+ValueError (e.g., malformed connection string)
+
+KeyError (e.g., missing process_monitoring_conn_str key)
+
+sqlalchemy.exc.ArgumentError
+
+pyodbc.ProgrammingError (e.g., invalid SQL syntax or data types)
+
+✅ Suggested Final List for Retrying in get_conn()
+python
+Copy
+Edit
+from sqlalchemy.exc import OperationalError, DBAPIError
+from azure.core.exceptions import ClientAuthenticationError
+from azure.identity import CredentialUnavailableError
+import pyodbc
+
+RETRYABLE_CONN_EXCEPTIONS = (
+    OperationalError,
+    DBAPIError,
+    pyodbc.InterfaceError,
+    pyodbc.OperationalError,
+    ConnectionError,
+    ClientAuthenticationError,
+    CredentialUnavailableError,
+    TimeoutError,
+)
