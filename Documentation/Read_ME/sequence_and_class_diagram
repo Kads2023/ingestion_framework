@@ -1,0 +1,86 @@
+Title: Ingestion Framework - High Level Sequence
+
+User/Job Trigger -> BaseIngest: run_load()
+BaseIngest -> BaseIngest: pre_load()
+BaseIngest -> CommonUtils: read_and_set_input_args()
+BaseIngest -> CommonUtils: read_and_set_common_config()
+BaseIngest -> CommonUtils: read_and_set_table_config()
+BaseIngest -> ProcessMonitoring: check_if_already_processed()
+ProcessMonitoring --> BaseIngest: job_status
+
+alt job not already processed
+    BaseIngest -> BaseIngest: load()
+    BaseIngest -> BaseIngest: form_source_and_target_locations()
+    BaseIngest -> BaseIngest: form_schema_from_dict()
+    BaseIngest -> BaseIngest: collate_columns_to_add()
+    BaseIngest -> CsvIngest (subclass): read_data_from_source()
+    CsvIngest --> BaseIngest: dataframe
+    BaseIngest -> BaseIngest: add_derived_columns(dataframe)
+    BaseIngest -> ValidationUtils: validate_data(dataframe)
+    ValidationUtils --> BaseIngest: validation_result
+    alt validation passed
+        BaseIngest -> BaseIngest: write_data_to_target_table(dataframe)
+    else validation failed
+        BaseIngest -> BaseIngest: write_data_to_quarantine_table(dataframe)
+    end
+    BaseIngest -> ProcessMonitoring: update_job_status('Completed')
+else
+    BaseIngest -> ProcessMonitoring: update_job_status('Already Processed')
+end
+BaseIngest --> User/Job Trigger: end
+
+
++--------------------+
+|     BaseIngest     |<---------------------+
++--------------------+                      |
+| - lc: Logger       |                      |
+| - input_args_obj   |                      |
+| - job_args_obj     |                      |
+| - common_utils_obj |                      |
+| - validation_obj   |                      |
+| - process_monitoring_obj |                |
+| - spark: SparkSession |                   |
+| - dbutils          |                      |
++--------------------+                      |
+| + __init__()       |                      |
+| + run_load()       |                      |
+| + pre_load()       |                      |
+| + load()           |                      |
+| + post_load()      |                      |
+| + read_data_from_source() [abstract]     |
+| + add_derived_columns()                   |
+| + write_data_to_target_table()            |
+| + write_data_to_quarantine_table()        |
++--------------------+                      |
+           ^                                |
+           |                                |
++---------------------+                     |
+|      CsvIngest      |                     |
++---------------------+                     |
+| + read_data_from_source() implementation  |
++---------------------+                     |
+
++--------------------+                      +------------------+
+|   CommonUtils      |                      | ValidationUtils  |
++--------------------+                      +------------------+
+| + parse_yaml()     |                      | + validate_data()|
+| + convert_types()  |                      +------------------+
++--------------------+
+
++--------------------+
+| ProcessMonitoring  |
++--------------------+
+| + update_status()  |
+| + check_status()   |
++--------------------+
+
+
+
+
+Explanation:
+Sequence diagram shows the flow from job start through the main ingestion lifecycle: initialization, pre-load config reading, data reading (delegated to subclass), data validation, writing output, and monitoring updates.
+
+Class diagram shows BaseIngest as the main class with all key methods and attributes. CsvIngest subclasses BaseIngest and implements the source reading method.
+
+Utility classes like CommonUtils, ValidationUtils, and ProcessMonitoring support the main ingestion workflow with config parsing, validation, and job status management respectively.
+
