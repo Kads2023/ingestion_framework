@@ -49,6 +49,30 @@ class JobArgs:
             return_val = self.job_dict.get(passed_key)
         return return_val
 
+    def get_mandatory(self, passed_key, passed_default=""):
+        this_module = f"[{self.this_class_name}.get_mandatory()] -"
+        self.common_utils.validate_function_param(
+            this_module,
+            {
+                "passed_key": {
+                    "input_value": passed_key,
+                    "data_type": "str",
+                    "check_empty": True,
+                },
+            },
+        )
+        if passed_key in self.job_dict.keys():
+            return_val = self.job_dict.get(passed_key)
+            return return_val
+        else:
+            error_msg = (
+                f"{this_module} KEyError: "
+                f"passed_key --> {passed_key} "
+                f"NOT FOUND"
+            )
+            self.lc.logger.error(error_msg)
+            raise KeyError(error_msg)
+
     def set(self, passed_key, passed_value):
         this_module = f"[{self.this_class_name}.set()] -"
         self.common_utils.validate_function_param(

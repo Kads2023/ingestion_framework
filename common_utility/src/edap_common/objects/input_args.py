@@ -1,3 +1,6 @@
+import traceback
+
+
 class InputArgs:
     default_values_for_input_params = {}
     mandatory_input_params = []
@@ -99,7 +102,8 @@ class InputArgs:
                 error_msg = (
                     f"{this_module} KeyError "
                     f"parameter --> `{passed_key}` "
-                    f"MANDATORY, ({e})"
+                    f"MANDATORY, ({e}) "
+                    f"\nTRACEBACK --> \n{traceback.format_exc()}\n"
                 )
                 self.lc.logger.error(error_msg)
                 raise KeyError(error_msg)
@@ -107,8 +111,21 @@ class InputArgs:
                 ret_value = self.set_default_value(passed_key)
         except Exception as e:
             error_msg = (
-                f"{this_module} Exception: passed_key --> `{passed_key}`, ({e})"
+                f"{this_module} "
+                f"Exception: passed_key --> `{passed_key}`, "
+                f"({e}) "
+                f"\nTRACEBACK --> \n{traceback.format_exc()}\n"
             )
             self.lc.logger.error(error_msg)
             raise
         return ret_value
+
+    def get_args_keys(self):
+        this_module = f"[{self.this_class_name}.get()] -"
+        args_keys = list(self.args.keys())
+        default_keys = list(self.default_values_for_input_params.keys())
+        all_keys = []
+        all_keys.extend(args_keys)
+        all_keys.extend(default_keys)
+        final_keys = list(set(all_keys))
+        return final_keys
