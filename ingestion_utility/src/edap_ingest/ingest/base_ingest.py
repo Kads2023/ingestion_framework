@@ -1,4 +1,10 @@
+import traceback
+from abc import abstractmethod
+
+from pkg_resources import issue_warning
 from pyspark.sql import SparkSession
+from pyspark.sql import DataFrame as Spark_Dataframe
+
 from pyspark.sql.types import (
     StringType, IntegerType, LongType, ShortType, ByteType,
     FloatType, DoubleType, DecimalType, BooleanType,
@@ -75,12 +81,13 @@ class BaseIngest:
             Initializes the BaseIngest class with the necessary objects for ingestion processing.
 
             Args:
+                lc: log handler
                 input_args (object): Object managing input parameters.
                 job_args (object): Object managing runtime and job-specific parameters.
-                common_utils (object): Utility object for common helper methods and logging.
+                common_utils (object): Utility object for common helper methods.
                 process_monitoring (object): Object handling job monitoring and status updates.
                 validation_utils (object): Object responsible for validation-related utilities.
-                dbutils (object, optional): Databricks utilities object. If not provided, it is initialized internally.
+                dbutils (object, optional): Databricks dbutils. If not provided, it is initialized internally.
         """
         self.this_class_name = "BaseIngest"
         this_module = f"[{self.this_class_name}.__init__()] -"
@@ -105,13 +112,8 @@ class BaseIngest:
         """
         this_module = f"[{self.this_class_name}.read_and_set_input_args()] -"
         self.lc.logger.info(f"Inside {this_module}")
-        self.input_args_obj.set_mandatory_input_params(
-            mandatory_input_params
-        )
-        self.input_args_obj.set_default_values_for_input_params(
-            default_values_for_input_params
-        )
-        for each_key in input_params_keys:
+        get_input_args_keys = self.input_args_obj.get_args_keys()
+        for each_key in get_input_args_keys:
             each_key_value = self.input_args_obj.get(each_key)
             if each_key in input_params_to_be_converted_to_bool:
                 final_key_values = self.common_utils_obj.check_and_evaluate_str_to_bool(
@@ -128,8 +130,10 @@ class BaseIngest:
         """
         this_module = f"[{self.this_class_name}.read_and_set_common_config()] -"
         self.lc.logger.info(f"Inside {this_module}")
-        common_config_file_location = self.job_args_obj.get("common_config_file_location")
-        common_dict = self.common_utils_obj.read_yaml(common_config_file_location)
+        common_config_file_location = self.input_args_obj.get(
+            "common_config_file_location"
+        ).strip()
+        common_dict = self.common_utils_obj.read_yaml_file(common_config_file_location)
         for each_key in common_dict.keys():
             each_key_value = common_dict[each_key]
             self.job_args_obj.set(each_key, each_key_value)
@@ -141,7 +145,9 @@ class BaseIngest:
         """
         this_module = f"[{self.this_class_name}.read_and_set_table_config()] -"
         self.lc.logger.info(f"Inside {this_module}")
-        table_config_file_location = self.job_args_obj.get("table_config_file_location")
+        table_config_file_location = self.input_args_obj.get(
+            "table_config_file_location"
+        ).strip()
         table_dict = self.common_utils_obj.read_yaml_file(table_config_file_location)
         for each_key in table_dict.keys():
             each_key_value = table_dict[each_key]
@@ -155,7 +161,7 @@ class BaseIngest:
                 passed_message (str): Message to log and pass during the notebook exit.
         """
         self.process_monitoring_obj.insert_update_job_run_status(
-            "Exited",
+            "Exited", # Already_Processed
             passed_comments=passed_message
         )
         self.raise_exception = False
@@ -172,15 +178,21 @@ class BaseIngest:
         """
         this_module = f"[{self.this_class_name}.pre_load()] -"
         self.lc.logger.info(f"Inside {this_module}")
-        self.read_and_set_input_args()
+        self.input_args_obj.set_mandatory_input_params(
+            mandatory_input_params
+        )
+        self.input_args_obj.set_default_values_for_input_params(
+            default_values_for_input_params
+        )
         self.read_and_set_common_config()
         self.read_and_set_table_config()
+        self.read_and_set_input_args()
         self.process_monitoring_obj.check_and_get_job_id()
         job_id = self.job_args_obj.get("job_id")
-        run_date = self.job_args_obj.get("run_date")
+        run_date = self.job_args_obj.get_mandatory("run_date")
         self.process_monitoring_obj.insert_update_job_run_status("Started")
         self.process_monitoring_obj.check_already_processed()
-        check_already_processed = self.job_args_obj.get(f"{job_id}_completed")
+        check_already_processed = self.job_args_obj.get_mandatory(f"{job_id}_completed")
         if check_already_processed:
             message = (
                 f"{this_module} "
@@ -229,12 +241,9 @@ class BaseIngest:
         """
         this_module = f"[{self.this_class_name}.form_source_and_target_locations()] -"
         self.lc.logger.info(f"Inside {this_module}")
-        run_date = self.job_args_obj.get("run_date")
+        run_date = self.job_args_obj.get_mandatory("run_date")
         source_base_location = self.job_args_obj.get("source_base_location")
         source_reference_location = self.job_args_obj.get("source_reference_location")
-        target_catalog = self.job_args_obj.get("target_catalog")
-        target_schema = self.job_args_obj.get("target_schema")
-        target_table = self.job_args_obj.get("target_table")
         source_file_name_prefix = self.job_args_obj.get("source_file_name_prefix")
         source_file_extension = self.job_args_obj.get("source_file_extension")
         year, month, day = self.common_utils_obj.get_date_split(run_date)
@@ -257,8 +266,24 @@ class BaseIngest:
             source_file_extension
         )
         self.job_args_obj.set("source_location", source_location)
+        target_catalog = self.job_args_obj.get_mandatory("target_catalog")
+        target_schema = self.job_args_obj.get_mandatory("target_schema")
+        target_table = self.job_args_obj.get_mandatory("target_table")
         target_location = f"{target_catalog}.{target_schema}.{target_table}"
         self.job_args_obj.set("target_location", target_location)
+        quarantine_target_catalog = self.job_args_obj.get(
+            "quarantine_target_catalog", target_catalog
+        )
+        quarantine_target_schema = self.job_args_obj.get(
+            "quarantine_target_schema", target_schema
+        )
+        quarantine_target_table = self.job_args_obj.get(
+            "quarantine_target_table", f"{target_table}_quarantine"
+        )
+        quarantine_target_location = (f"{quarantine_target_catalog}."
+                                      f"{quarantine_target_schema}."
+                                      f"{quarantine_target_table}")
+        self.job_args_obj.set("quarantine_target_location", quarantine_target_location)
 
     def collate_columns_to_add(self):
         """
@@ -278,6 +303,84 @@ class BaseIngest:
         columns_to_be_added.extend(table_columns_to_be_added)
         self.job_args_obj.set("columns_to_be_added", columns_to_be_added)
 
+    def check_multi_line_file_option(self):
+        this_module = f"[{self.this_class_name}.check_multi_line_file_option()] -"
+        multi_line_from_config = self.job_args_obj.get("multi_line").strip().lower()
+        multi_line = (
+            str(
+                self.common_utils_obj.check_and_evaluate_str_to_bool(
+                    multi_line_from_config
+                )
+            ).strip().lower()
+        )
+        self.job_args_obj.set("multi_line", multi_line)
+
+    @abstractmethod
+    def read_data_from_source(self) -> Spark_Dataframe:
+        """
+        Implemented as part of the specific subclass
+        :return: The source data as a Spark_Dataframe
+        """
+
+    def add_derived_columns(self, data_to_add_columns) -> Spark_Dataframe:
+        this_module = f"[{self.this_class_name}.add_derived_columns()] -"
+        columns_to_be_added = self.job_args_obj.get("columns_to_be_added")
+        self.lc.logger.info(
+            f"Inside {this_module} "
+            f"columns_to_be_added --> {columns_to_be_added}"
+        )
+        after_adding_columns = data_to_add_columns
+        for each_item in columns_to_be_added:
+            column_name = each_item["column_name"]
+            data_type = each_item["data_type"]
+            value = each_item.get("column_name", None)
+            if value is None:
+                function_name = each_item.get("function_name", "")
+                if function_name == "hash":
+                    col_list = each_item["hash_of"]
+                    returned_data = self.common_utils_obj.add_hash_column(
+                        after_adding_columns, column_name, col_list
+                    )
+                elif function_name == "current_timestamp":
+                    returned_data = self.common_utils_obj.add_current_timestamp(
+                        after_adding_columns, column_name
+                    )
+                else:
+                    error_msg = (
+                        f"{this_module} "
+                        f"ValueError: "
+                        f"UNKNOWN FUNCTION NAME "
+                        f"{function_name}"
+                    )
+                    self.lc.logger.error(error_msg)
+                    raise ValueError(error_msg)
+            else:
+                returned_data = self.common_utils_obj.add_literal_column(
+                    after_adding_columns, column_name, value
+                )
+            after_adding_columns = returned_data
+        return after_adding_columns
+
+    def write_data_to_target_table(self, data_to_write):
+        this_module = f"[{self.this_class_name}.write_data_to_target_table()] -"
+        dry_run = self.job_args_obj.get("dry_run")
+        target_location = self.job_args_obj.get_mandatory("target_location")
+        run_row_count = data_to_write.count()
+        self.job_args_obj.set("run_row_count", run_row_count)
+        if not dry_run:
+            data_to_write.write.mode("append").saveAsTable(target_location)
+
+    def write_data_to_quarantine_table(self, validation_issues_data):
+        this_module = f"[{self.this_class_name}.write_data_to_quarantine_table()] -"
+        dry_run = self.job_args_obj.get("dry_run")
+        quarantine_target_location = self.job_args_obj.get_mandatory(
+            "quarantine_target_location"
+        )
+        if not dry_run:
+            validation_issues_data.write.mode("append").saveAsTable(
+                quarantine_target_location
+            )
+
     def load(self):
         """
             Executes the preparation phase of loading:
@@ -290,6 +393,48 @@ class BaseIngest:
         self.form_source_and_target_locations()
         self.form_schema_from_dict()
         self.collate_columns_to_add()
+        self.check_multi_line_file_option()
+        source_data = self.read_data_from_source()
+        # source_data.cache()
+        source_row_counts = source_data.count()
+        self.job_args_obj.set("source_row_count", source_row_counts)
+        if source_row_counts > 0:
+            after_adding_columns_df = self.add_derived_columns(source_data)
+            self.lc.logger.debug(
+                f"{this_module} "
+                f"after_adding_columns_df.columns --> "
+                f"{after_adding_columns_df.columns}, "
+                f"after_adding_columns_df.head --> "
+                f"{after_adding_columns_df.head(1)}"
+            )
+            # FOR FUTURE REFERENCE
+            # not sure why the data is becoming empty after it is through GX
+            # we can pass data_to_be_validated instead of after_adding_columns_df
+            # that fixes the issue
+            # data_to_be_validated = after_adding_columns_df.select("*")
+            validation_succeeded, validation_output_df, validation_output_dict = (
+                self.validation_obj.run_validations(
+                    after_adding_columns_df,
+                    self.job_args_obj.get_job_dict()
+                )
+            )
+            validation_has_error = validation_output_dict["validation_has_error"]
+            self.lc.logger.debug(
+                f"{this_module} "
+                f"after_adding_columns_df.columns --> "
+                f"{after_adding_columns_df.columns}, "
+                f"after_adding_columns_df.tail --> "
+                f"{after_adding_columns_df.tail(1)}"
+            )
+            if not validation_has_error:
+                self.write_data_to_target_table(after_adding_columns_df)
+            if not validation_succeeded:
+                self.process_monitoring_obj.insert_validation_run_status(
+                    validation_output_dict
+                )
+                if not(validation_output_df.rdd.isEmpty()):
+                    self.write_data_to_quarantine_table(validation_output_df)
+        # source_data.unpersist()
 
     def post_load(self):
         """
