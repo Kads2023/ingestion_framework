@@ -2,7 +2,7 @@ import sys
 import types
 
 import pytest
-from unittest.mock import MagicMock, mock_open
+from unittest.mock import MagicMock, mock_open, Mock
 from types import SimpleNamespace
 
 from datetime import datetime
@@ -296,3 +296,113 @@ def test_retry_decorator_no_retry_on_success(monkeypatch, common_utils, sleep):
 
     # Assert that time.sleep was never called because the function didn't fail
     assert sleep.call_count == 0
+
+@pytest.fixture
+def spark_df_mock():
+    df = Mock()
+    df.columns = ["col1", "col2"]
+    df.withColumn = MagicMock(return_value=df)
+    df.rdd.isRmpty = MagicMock(return_value=False)  # typo intentional for simulating original
+    return df
+
+@pytest.fixture
+def monkey_data_type_defaults(monkeypatch):
+    monkeypatch.setitem(
+        __import__("edap_common.utils.constants").data_type_defaults,
+        "spark_dataframe",
+        {"type_name": "Spark DataFrame", "type": Mock},
+    )
+    monkeypatch.setitem(
+        __import__("edap_common.utils.constants").data_type_defaults,
+        "str",
+        {"type_name": "String", "type": str},
+    )
+    monkeypatch.setitem(
+        __import__("edap_common.utils.constants").data_type_defaults,
+        "list",
+        {"type_name": "List", "type": list},
+    )
+
+# ----------------------------
+# validate_function_param
+# ----------------------------
+def test_validate_function_param_valid(common_utils, monkey_data_type_defaults):
+    params_dict = {
+        "input_df": {
+            "input_value": Mock(),
+            "data_type": "spark_dataframe",
+            "check_empty": False,
+        },
+        "name": {
+            "input_value": "test",
+            "data_type": "str",
+            "check_empty": True,
+        }
+    }
+    common_utils.validate_function_param("test_module", params_dict)
+
+def test_validate_function_param_invalid_type(common_utils, monkey_data_type_defaults):
+    params_dict = {
+        "param": {
+            "input_value": 123,
+            "data_type": "str",
+        }
+    }
+    with pytest.raises(TypeError):
+        common_utils.validate_function_param("mod", params_dict)
+
+def test_validate_function_param_unsupported_type(common_utils):
+    params_dict = {
+        "param": {
+            "input_value": "val",
+            "data_type": "unsupported",
+        }
+    }
+    with pytest.raises(ValueError):
+        common_utils.validate_function_param("mod", params_dict)
+
+# ----------------------------
+# add_hash_column
+# ----------------------------
+def test_add_hash_column_success(common_utils, spark_df_mock, monkeypatch, monkey_data_type_defaults):
+    monkeypatch.setattr(common_utils, "validate_function_param", Mock())
+    monkeypatch.setattr("pyspark.sql.functions.sha2", lambda x, y: x)
+    monkeypatch.setattr("pyspark.sql.functions.concat_ws", lambda sep, *args: "_".join(args))
+    result_df = common_utils.add_hash_column(spark_df_mock, "hash_col", ["col1", "col2"])
+    assert result_df == spark_df_mock
+
+def test_add_hash_column_duplicate_col(common_utils, spark_df_mock, monkeypatch, monkey_data_type_defaults):
+    monkeypatch.setattr(common_utils, "validate_function_param", Mock())
+    spark_df_mock.columns.append("hash_col")
+    with pytest.raises(ValueError):
+        common_utils.add_hash_column(spark_df_mock, "hash_col", ["col1"])
+
+# ----------------------------
+# add_current_timestamp
+# ----------------------------
+def test_add_current_timestamp_success(common_utils, spark_df_mock, monkeypatch, monkey_data_type_defaults):
+    monkeypatch.setattr(common_utils, "validate_function_param", Mock())
+    monkeypatch.setattr("pyspark.sql.functions.current_timestamp", lambda: "NOW")
+    result_df = common_utils.add_current_timestamp(spark_df_mock, "timestamp")
+    assert result_df == spark_df_mock
+
+def test_add_current_timestamp_duplicate_col(common_utils, spark_df_mock, monkeypatch, monkey_data_type_defaults):
+    monkeypatch.setattr(common_utils, "validate_function_param", Mock())
+    spark_df_mock.columns.append("timestamp")
+    with pytest.raises(ValueError):
+        common_utils.add_current_timestamp(spark_df_mock, "timestamp")
+
+# ----------------------------
+# add_literal_column
+# ----------------------------
+def test_add_literal_column_success(common_utils, spark_df_mock, monkeypatch, monkey_data_type_defaults):
+    monkeypatch.setattr(common_utils, "validate_function_param", Mock())
+    monkeypatch.setattr("pyspark.sql.functions.lit", lambda val: val)
+    result_df = common_utils.add_literal_column(spark_df_mock, "lit_col", "value")
+    assert result_df == spark_df_mock
+
+def test_add_literal_column_duplicate_col(common_utils, spark_df_mock, monkeypatch, monkey_data_type_defaults):
+    monkeypatch.setattr(common_utils, "validate_function_param", Mock())
+    spark_df_mock.columns.append("lit_col")
+    with pytest.raises(ValueError):
+        common_utils.add_literal_column(spark_df_mock, "lit_col", "value")
