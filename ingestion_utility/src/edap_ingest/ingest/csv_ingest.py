@@ -1,22 +1,13 @@
-"""
-CsvIngest module for reading, transforming, and loading CSV files into a target data store.
-
-This class extends the BaseIngest functionality, adding specific logic to handle CSV sources.
-It handles reading CSV files with or without a provided schema, validates the data,
-and writes it to the specified target, with optional dry run capability.
-
-Classes:
-    CsvIngest: Inherits from BaseIngest and implements CSV-specific ingestion logic.
-"""
-
 from edap_ingest.ingest.base_ingest import BaseIngest
-
 from pyspark.sql import DataFrame as Spark_Dataframe
 
 
 class CsvIngest(BaseIngest):
     """
     CsvIngest class to manage the ingestion process for CSV files.
+
+    Inherits from:
+        BaseIngest: Base class containing common ingestion logic.
 
     Attributes:
         this_class_name (str): Name of the class for logging purposes.
@@ -32,12 +23,33 @@ class CsvIngest(BaseIngest):
         validation_utils,
         dbutils=None
     ):
+        """
+        Initialize the CsvIngest class.
+
+        Args:
+            lc: Logging context object for writing logs.
+            input_args: Dictionary of input arguments for the job.
+            job_args: Object providing access to job configuration parameters.
+            common_utils: Utility class for common transformations or helpers.
+            process_monitoring: Object to monitor and report ingestion job status.
+            validation_utils: Utility class for validating input data or parameters.
+            dbutils (optional): Databricks utilities object, if applicable.
+        """
         self.this_class_name = f"{type(self).__name__}"
         this_module = f"[{self.this_class_name}.__init__()] -"
         super().__init__(lc, input_args, job_args, common_utils, process_monitoring, validation_utils, dbutils)
         self.lc.logger.info(f"Inside {this_module}")
 
     def read_data_from_source(self) -> Spark_Dataframe:
+        """
+        Read data from the source CSV file(s) as per the job configuration.
+
+        Uses schema from job arguments if provided, otherwise infers schema.
+        Also logs relevant metadata and configuration settings.
+
+        Returns:
+            Spark_Dataframe: DataFrame created from the CSV source.
+        """
         this_module = f"[{self.this_class_name}.load()] -"
         super().read_data_from_source()
         source_location = self.job_args_obj.get_mandatory("source_location")
