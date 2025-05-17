@@ -107,8 +107,8 @@ class BaseIngest:
 
     def read_and_set_input_args(self):
         """
-            Reads mandatory and default input parameters, evaluates certain values (e.g., boolean flags),
-            and sets them into the job arguments object for downstream usage.
+        Reads input arguments and sets them into the job arguments object.
+        Converts specified input parameters from string to boolean as needed.
         """
         this_module = f"[{self.this_class_name}.read_and_set_input_args()] -"
         self.lc.logger.info(f"Inside {this_module}")
@@ -125,8 +125,8 @@ class BaseIngest:
 
     def read_and_set_common_config(self):
         """
-            Reads a YAML configuration file specified by `common_config_file_location`
-            and populates the job arguments with common configuration values.
+        Reads the common configuration YAML file specified in input arguments
+        and sets its key-value pairs into the job arguments object.
         """
         this_module = f"[{self.this_class_name}.read_and_set_common_config()] -"
         self.lc.logger.info(f"Inside {this_module}")
@@ -140,8 +140,8 @@ class BaseIngest:
 
     def read_and_set_table_config(self):
         """
-            Reads a YAML configuration file specified by `table_config_file_location`
-            and populates the job arguments with table-specific settings.
+        Reads the table-specific configuration YAML file specified in input arguments
+        and sets its key-value pairs into the job arguments object.
         """
         this_module = f"[{self.this_class_name}.read_and_set_table_config()] -"
         self.lc.logger.info(f"Inside {this_module}")
@@ -155,10 +155,10 @@ class BaseIngest:
 
     def exit_without_errors(self, passed_message):
         """
-            Updates the job status to 'Exited' with a provided message and gracefully exits the notebook.
+        Exits the notebook/job gracefully without error after updating job status.
 
-            Args:
-                passed_message (str): Message to log and pass during the notebook exit.
+        Args:
+            passed_message (str): Message to log and pass on notebook exit.
         """
         self.process_monitoring_obj.insert_update_job_run_status(
             "Exited", # Already_Processed
@@ -170,11 +170,12 @@ class BaseIngest:
 
     def pre_load(self):
         """
-            Performs pre-load checks and setups:
-            - Reads and sets input parameters and configuration files.
-            - Initializes job monitoring.
-            - Checks if the job has already been processed for the given run date,
-              and exits without processing if already completed.
+        Performs pre-load processing including:
+        - Validating and setting mandatory and default input parameters.
+        - Reading and setting common and table configuration.
+        - Initializing job monitoring.
+        - Checking if the job has already been processed for the given run date,
+          and exiting early if so.
         """
         this_module = f"[{self.this_class_name}.pre_load()] -"
         self.lc.logger.info(f"Inside {this_module}")
@@ -205,8 +206,8 @@ class BaseIngest:
 
     def form_schema_from_dict(self):
         """
-            Dynamically constructs a Spark `StructType` schema based on the provided schema dictionary
-            from the job arguments. Skips columns marked as derived.
+        Forms a Spark StructType schema from the 'schema' dictionary in job arguments.
+        Sets the schema StructType back into job arguments under 'schema_struct'.
         """
         this_module = f"[{self.this_class_name}.form_schema_from_dict()] -"
         self.lc.logger.info(f"Inside {this_module}")
@@ -236,8 +237,10 @@ class BaseIngest:
 
     def form_source_and_target_locations(self):
         """
-            Constructs dynamic paths for the source data file and target table based on run date
-            and configuration parameters such as folder structure and file naming conventions.
+        Constructs source data file location and target table location strings
+        based on run date and configuration parameters, then stores them
+        in the job arguments object.
+        Also sets quarantine target location.
         """
         this_module = f"[{self.this_class_name}.form_source_and_target_locations()] -"
         self.lc.logger.info(f"Inside {this_module}")
@@ -287,8 +290,8 @@ class BaseIngest:
 
     def collate_columns_to_add(self):
         """
-            Collates and merges audit columns and table-specific columns
-            to form a unified list of columns to be added during the load.
+        Collates audit and table columns to be added during ingestion
+        and stores the combined list in the job arguments object.
         """
         this_module = f"[{self.this_class_name}.collate_columns_to_add()] -"
         self.lc.logger.info(f"Inside {this_module}")
@@ -304,6 +307,11 @@ class BaseIngest:
         self.job_args_obj.set("columns_to_be_added", columns_to_be_added)
 
     def check_multi_line_file_option(self):
+        """
+        Reads and evaluates the multi_line file option from job arguments,
+        converts it to a normalized boolean string ('true' or 'false'),
+        and updates the job arguments accordingly.
+        """
         this_module = f"[{self.this_class_name}.check_multi_line_file_option()] -"
         multi_line_from_config = self.job_args_obj.get("multi_line").strip().lower()
         multi_line = (
@@ -318,11 +326,24 @@ class BaseIngest:
     @abstractmethod
     def read_data_from_source(self) -> Spark_Dataframe:
         """
-        Implemented as part of the specific subclass
-        :return: The source data as a Spark_Dataframe
+        Abstract method to be implemented by subclasses for reading data from the source.
+
+        Returns:
+            Spark_Dataframe: The data read from the source.
         """
+        # existing code
 
     def add_derived_columns(self, data_to_add_columns) -> Spark_Dataframe:
+        """
+        Adds derived or literal columns to the input Spark DataFrame
+        based on the configuration specified in 'columns_to_be_added'.
+
+        Args:
+            data_to_add_columns (Spark_Dataframe): Input Spark DataFrame.
+
+        Returns:
+            Spark_Dataframe: DataFrame with added columns.
+        """
         this_module = f"[{self.this_class_name}.add_derived_columns()] -"
         columns_to_be_added = self.job_args_obj.get("columns_to_be_added")
         self.lc.logger.info(
@@ -362,6 +383,13 @@ class BaseIngest:
         return after_adding_columns
 
     def write_data_to_target_table(self, data_to_write):
+        """
+        Writes the provided DataFrame to the target table if not a dry run.
+        Sets the row count in job arguments.
+
+        Args:
+            data_to_write (Spark_Dataframe): DataFrame to be written to target.
+        """
         this_module = f"[{self.this_class_name}.write_data_to_target_table()] -"
         dry_run = self.job_args_obj.get("dry_run")
         target_location = self.job_args_obj.get_mandatory("target_location")
@@ -371,6 +399,12 @@ class BaseIngest:
             data_to_write.write.mode("append").saveAsTable(target_location)
 
     def write_data_to_quarantine_table(self, validation_issues_data):
+        """
+        Writes records with validation issues to the quarantine table if not a dry run.
+
+        Args:
+            validation_issues_data (Spark_Dataframe): DataFrame containing invalid records.
+        """
         this_module = f"[{self.this_class_name}.write_data_to_quarantine_table()] -"
         dry_run = self.job_args_obj.get("dry_run")
         quarantine_target_location = self.job_args_obj.get_mandatory(
@@ -383,10 +417,15 @@ class BaseIngest:
 
     def load(self):
         """
-            Executes the preparation phase of loading:
-            - Forms the source and target locations.
-            - Constructs the data schema.
-            - Prepares the list of columns to be added.
+        Orchestrates the loading process:
+        - Forms source and target locations.
+        - Forms schema from configuration.
+        - Collates columns to be added.
+        - Checks multiline file option.
+        - Reads data from source.
+        - Adds derived columns.
+        - Runs validations and writes valid data to target,
+          and invalid data to quarantine if any.
         """
         this_module = f"[{self.this_class_name}.load()] -"
         self.lc.logger.info(f"Inside {this_module}")
@@ -438,7 +477,7 @@ class BaseIngest:
 
     def post_load(self):
         """
-            Marks the job run status as 'Completed' after successful ingestion processing.
+        Marks the job run status as 'Completed' after successful ingestion processing.
         """
         this_module = f"[{self.this_class_name}.post_load()] -"
         self.lc.logger.info(f"Inside {this_module}")
