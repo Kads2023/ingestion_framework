@@ -3,11 +3,11 @@ import json
 from jinja2 import Environment, FileSystemLoader
 from edap_automation.data_type_mapper.data_type_mapper_factory import DataTypeMapperFactory
 
-# Jinja setup
+# Directory setup
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-TEMPLATE_DIR = os.path.join(BASE_DIR, 'templates')
-INPUT_DIR = os.path.join(BASE_DIR, 'inputs')
-OUTPUT_DIR = os.path.join(BASE_DIR, 'output')
+TEMPLATE_DIR = os.path.join(BASE_DIR, 'resources', 'templates')
+INPUT_DIR = os.path.join(BASE_DIR, 'resources', 'inputs')
+OUTPUT_DIR = os.path.join(BASE_DIR, 'resources', 'output')
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # Set up Jinja2 environment
@@ -25,6 +25,9 @@ config_template = env.get_template('config.yaml.j2')
 def generate_artifacts(source_system: str, schema_filename: str, table_list_str: str):
     table_names = [t.strip().upper() for t in table_list_str.split(',')]
     schema_file_path = os.path.join(INPUT_DIR, schema_filename)
+
+    if not os.path.exists(schema_file_path):
+        raise FileNotFoundError(f"Schema file '{schema_file_path}' not found.")
 
     # Load schema JSON
     with open(schema_file_path, 'r') as f:
@@ -79,3 +82,24 @@ generate_artifacts("oracle", "oracle_schema.json", "EMPLOYEES")
 #     table_list_str = sys.argv[3]
 #
 #     generate_artifacts(source_system, schema_filename, table_list_str)
+
+
+# For Oracle
+# oracle_extractor = OracleSchemaExtractor(
+#     user='your_user',
+#     password='your_password',
+#     dsn='host:port/service',
+#     schema_owner='YOUR_SCHEMA'
+# )
+# oracle_extractor.connect()
+# oracle_extractor.extract_metadata(['EMPLOYEES', 'DEPARTMENTS'])
+# oracle_extractor.disconnect()
+
+# For SQL Server
+# sqlserver_extractor = SQLServerSchemaExtractor(
+#     connection_string='DRIVER={SQL Server};SERVER=your_server;DATABASE=your_db;UID=user;PWD=pwd',
+#     schema_owner='dbo'
+# )
+# sqlserver_extractor.connect()
+# sqlserver_extractor.extract_metadata(['EMPLOYEES', 'DEPARTMENTS'])
+# sqlserver_extractor.disconnect()
