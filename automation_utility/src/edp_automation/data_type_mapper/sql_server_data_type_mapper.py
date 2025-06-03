@@ -1,4 +1,4 @@
-from edap_automation.data_type_mapper.base_data_type_mapper import (BaseDataTypeMapper)
+from edp_automation.data_type_mapper.base_data_type_mapper import (BaseDataTypeMapper)
 
 
 class SQLServerDataTypeMapper(BaseDataTypeMapper):

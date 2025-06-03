@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 
 setup(
-    name="edap_automation",
+    name="edp_automation",
     version="0.0.1",
     author="ksaradha",
     description="a simple python wheel",

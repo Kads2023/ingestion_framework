@@ -1,7 +1,7 @@
 import os
 import json
 from jinja2 import Environment, FileSystemLoader
-from edap_automation.data_type_mapper.data_type_mapper_factory import DataTypeMapperFactory
+from edp_automation.data_type_mapper.data_type_mapper_factory import DataTypeMapperFactory
 
 # Directory setup
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))

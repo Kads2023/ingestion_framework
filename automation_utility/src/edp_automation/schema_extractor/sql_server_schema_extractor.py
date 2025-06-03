@@ -1,5 +1,5 @@
 import pyodbc
-from edap_automation.schema_extractor.base_schema_extractor import (BaseSchemaExtractor)
+from edp_automation.schema_extractor.base_schema_extractor import (BaseSchemaExtractor)
 
 
 class SQLServerSchemaExtractor(BaseSchemaExtractor):

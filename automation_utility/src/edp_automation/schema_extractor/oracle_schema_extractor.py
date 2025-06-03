@@ -1,20 +1,18 @@
-import cx_Oracle
-from edap_automation.schema_extractor.base_schema_extractor import (BaseSchemaExtractor)
+import pyodbc
+from edp_automation.schema_extractor.base_schema_extractor import (BaseSchemaExtractor)
 
 
 class OracleSchemaExtractor(BaseSchemaExtractor):
     def __init__(self, user, password, dsn, schema_owner):
         self.user = user
         self.password = password
-        self.dsn = dsn
+        self.dsn = dsn  # This should be a valid ODBC DSN or connection string
         self.schema_owner = schema_owner
         self.connection = None
 
     def connect(self):
-        self.connection = cx_Oracle.connect(
-            user=self.user,
-            password=self.password,
-            dsn=self.dsn
+        self.connection = pyodbc.connect(
+            f"DSN={self.dsn};UID={self.user};PWD={self.password}"
         )
 
     def disconnect(self):
@@ -22,7 +20,7 @@ class OracleSchemaExtractor(BaseSchemaExtractor):
             self.connection.close()
 
     def extract_metadata(self, table_names, output_file='output_oracle_schema.json'):
-        placeholders = ','.join([':{}'.format(i + 1) for i in range(len(table_names))])
+        placeholders = ','.join(['?'] * len(table_names))
         table_names_upper = [name.upper() for name in table_names]
 
         query = f"""
@@ -42,7 +40,7 @@ class OracleSchemaExtractor(BaseSchemaExtractor):
                 AND c.table_name = cm.table_name
                 AND c.column_name = cm.column_name
             WHERE c.table_name IN ({placeholders})
-              AND c.owner = :owner
+              AND c.owner = ?
         """
 
         cursor = self.connection.cursor()
