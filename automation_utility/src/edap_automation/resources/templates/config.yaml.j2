@@ -1,5 +1,15 @@
 job_name: {{ table_name }}_Table
-source: {{ table_name }}
+source: {{ table_name|lower }}
+{% set identity_cols = columns | selectattr('identity_column', 'equalto', true) | list %}
+{% if identity_cols %}
+table_columns_to_be_added:
+  - column_name: "edp_hash_key"
+    data_type: STRING
+    hash_of:
+      {% for col in identity_cols %}
+      - {{ col.name }}
+      {% endfor %}
+{% endif %}
 schema:
 {% for col in columns %}
   {{ col.name }}:

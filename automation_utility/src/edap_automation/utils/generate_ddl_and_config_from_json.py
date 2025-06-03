@@ -46,12 +46,17 @@ def generate_artifacts(source_system: str, schema_filename: str, table_list_str:
                 'name': entry['column_name'],
                 'datatype': mapped_type,
                 'nullable': entry.get('nullable', 'Y') == 'Y',
+                'identity_column': entry.get('identity_column', 'NO') == 'YES',
                 'comment': entry.get('comments', '')
             })
 
     # Render and write files
     for table, columns in table_columns.items():
-        context = {'table_name': table, 'columns': columns}
+        context = {
+            'table_name': table,
+            'columns': columns
+        }
+        print(f"context --> {context}")
 
         ddl_output = ddl_template.render(context)
         config_output = config_template.render(context)

@@ -1,5 +1,10 @@
 job_name: EMPLOYEES_Table
-source: EMPLOYEES
+source: employees
+table_columns_to_be_added:
+  - column_name: "edp_hash_key"
+    data_type: STRING
+    hash_of:
+      - EMP_ID
 schema:
   EMP_ID:
     data_type: DECIMAL(10,0)
