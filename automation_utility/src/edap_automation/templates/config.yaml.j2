@@ -1,0 +1,19 @@
+job_name: {{ table_name }}_Table
+source: {{ table_name }}
+schema:
+{% for col in columns %}
+  {{ col.name }}:
+    data_type: {{ col.datatype }}
+{% endfor %}
+validations:
+  - name: schema_check
+    action_on_unexpected: ERROR
+{% set non_nullable_cols = columns | selectattr('nullable', 'equalto', false) | list %}
+{% if non_nullable_cols %}
+  - name: null_check
+    action_on_unexpected: WARNING
+    columns:
+{% for col in non_nullable_cols %}
+      - {{ col.name }}
+{% endfor %}
+{% endif %}

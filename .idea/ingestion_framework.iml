@@ -6,6 +6,7 @@
       <sourceFolder url="file://$MODULE_DIR$/common_utility/src/edap_ingest" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/common_utility/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/ingestion_utility/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/automation_utility/src" isTestSource="false" />
     </content>
     <orderEntry type="jdk" jdkName="Python 3.12 (myvenv)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />

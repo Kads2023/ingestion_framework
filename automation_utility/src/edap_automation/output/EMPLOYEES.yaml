@@ -1,0 +1,16 @@
+job_name: EMPLOYEES_Table
+source: EMPLOYEES
+schema:
+  EMP_ID:
+    data_type: DECIMAL(10,0)
+  EMP_NAME:
+    data_type: STRING
+  JOIN_DATE:
+    data_type: TIMESTAMP
+validations:
+  - name: schema_check
+    action_on_unexpected: ERROR
+  - name: null_check
+    action_on_unexpected: WARNING
+    columns:
+      - EMP_ID

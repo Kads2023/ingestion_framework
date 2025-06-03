@@ -1,0 +1,32 @@
+[
+  {
+    "table_name": "EMPLOYEES",
+    "column_name": "EMP_ID",
+    "data_type": "NUMBER",
+    "data_length": null,
+    "data_precision": 10,
+    "data_scale": 0,
+    "nullable": "N",
+    "identity_column": "YES"
+  },
+  {
+    "table_name": "EMPLOYEES",
+    "column_name": "EMP_NAME",
+    "data_type": "VARCHAR2",
+    "data_length": 100,
+    "data_precision": null,
+    "data_scale": null,
+    "nullable": "Y",
+    "identity_column": "NO"
+  },
+  {
+    "table_name": "EMPLOYEES",
+    "column_name": "JOIN_DATE",
+    "data_type": "DATE",
+    "data_length": null,
+    "data_precision": null,
+    "data_scale": null,
+    "nullable": "Y",
+    "identity_column": "NO"
+  }
+]
