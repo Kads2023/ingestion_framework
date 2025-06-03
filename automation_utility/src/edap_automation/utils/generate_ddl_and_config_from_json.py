@@ -90,6 +90,30 @@ generate_artifacts("oracle", "oracle_schema.json", "EMPLOYEES")
 
 
 # For Oracle
+
+# from schema_extractor.oracle_schema_extractor import OracleSchemaExtractor
+#
+# # Connection parameters
+# dsn = "ORACLE_DSN"           # or full connection string
+# user = "your_username"
+# password = "your_password"
+# schema_owner = "HR"
+#
+# # Tables to extract
+# table_list = ["EMPLOYEES", "DEPARTMENTS"]
+# output_file = "resources/inputs/source_schema_1.json"
+#
+# # Extractor invocation
+# extractor = OracleSchemaExtractor(user=user, password=password, dsn=dsn, schema_owner=schema_owner)
+#
+# extractor.connect()
+# extractor.extract_metadata(table_names=table_list, output_file=output_file)
+# extractor.disconnect()
+
+# dsn = "DRIVER={Oracle in OraClient21Home1};DBQ=your_db_host:1521/your_service;UID=your_username;PWD=your_password"
+# Pass this as dsn to the class and skip user and password in the string.
+
+
 # oracle_extractor = OracleSchemaExtractor(
 #     user='your_user',
 #     password='your_password',
