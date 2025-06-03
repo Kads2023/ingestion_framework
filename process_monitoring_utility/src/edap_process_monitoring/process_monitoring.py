@@ -10,6 +10,8 @@ from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType
 from azure.identity import ManagedIdentityCredential
 
+from .enums import RunStatus, ValidationRunStatus
+
 
 MAX_ATTEMPTS = 3
 DELAY_SECONDS = 2
@@ -29,8 +31,17 @@ class ProcessMonitoring:
         self.empty_df = self.spark.createDataFrame(self.empty_rdd, self.schema)
         self.empty_dict = {}
 
-    def retry_helper(self, **kwargs):
-        return self.common_utils.retry_on_exception(**kwargs)
+    def retry_any_function(self, func, *args, **kwargs):
+        decorated_func = self.common_utils.retry_on_exception(
+            max_attempts=MAX_ATTEMPTS,
+            delay_seconds=DELAY_SECONDS,
+            backoff_factor=BACKOFF_FACTOR,
+        )(func)
+        result = decorated_func(*args, **kwargs)
+        return result
+
+    # def retry_helper(self, **kwargs):
+    #     return self.common_utils.retry_on_exception(**kwargs)
 
     # @retry_helper(exceptions=(
     #     OperationalError,
@@ -70,20 +81,40 @@ class ProcessMonitoring:
     #     TimeoutError,
     #     SA_TimeoutError,
     # ), max_attempts=3, delay_seconds=2)
-    def execute_query_and_get_results(self, passed_query, param_dict, fetch_results=True):
+    def execute_query_and_get_results(
+            self,
+            passed_query,
+            passed_query_params,
+            fetch_results=True,
+            query_params_type="dict",
+            calling_module=""
+    ):
         """
         Executes a SQL query securely using parameterized input with '?' placeholders.
 
         Args:
             passed_query (str): SQL query string with '?' placeholders.
-            param_dict (dict, optional): Dictionary of parameters.
-            param_order (list, optional): Order of parameters in the SQL statement.
+            passed_query_params (dict, optional): Dictionary of parameters.
             fetch_results (bool): If True, fetch results as a Spark DataFrame.
+            query_params_type (str): If dict, runs a single query,
+                If list of dict it runs executemany internally
+            calling_module (str): The module from which it is called
 
         Returns:
             pyspark.sql.DataFrame: Results of the query or an empty DataFrame.
         """
+        final_calling_module = ""
+        if calling_module:
+            final_calling_module = f" CALLED FROM {calling_module}"
+        this_module = f"[{self.this_class_name}.execute_query_and_get_results()] -{final_calling_module}"
         dry_run = self.job_args_obj.get("dry_run")
+        self.common_utils.validate_function_param(
+            this_module,
+            {
+                "passed_query": {"input_value": passed_query, "data_type": "str", "check_empty": True},
+                "passed_query_params": {"input_value": passed_query_params, "data_type": query_params_type},
+            }
+        )
         read_df = self.empty_df
         if not dry_run:
             query_to_check = passed_query.strip().upper()
@@ -93,19 +124,19 @@ class ProcessMonitoring:
                     (query_to_check.startswith("UPDATE") and ("WHERE" in query_to_check))
             ):
                 with self.get_conn().begin() as conn:
-                    result = conn.execute(sa.text(passed_query), param_dict)
+                    result = conn.execute(sa.text(passed_query), passed_query_params)
                     if fetch_results:
                         rows = result.fetchall()
                         columns = [desc for desc in result.keys()]
                         if rows:
                             pandas_df = pd.DataFrame.from_records(rows, columns=columns)
                             read_df = self.spark.createDataFrame(pandas_df)
-                        conn.commit()
-                        conn.close()
+                    conn.commit()
+                    conn.close()
             else:
-                self.lc.logger.info(
-                    f"CANNOT EXECUTE THE QUERY"
-                )
+                error_msg = f"CANNOT EXECUTE THE QUERY"
+                self.lc.logger.info(error_msg)
+                raise ValueError(error_msg)
         return read_df
 
     def get_and_set_job_id(self, raise_exception=False):
@@ -113,6 +144,7 @@ class ProcessMonitoring:
         Retrieves and sets the job ID from the job details table based on provided parameters.
         """
         this_module = f"[{self.this_class_name}.get_and_set_job_id()] -"
+        dry_run = self.job_args_obj.get("dry_run")
         job_details_table_name = self.job_args_obj.get("job_details_table_name")
         load_type = self.job_args_obj.get("load_type")
         source_system = self.job_args_obj.get("source_system")
@@ -127,7 +159,12 @@ class ProcessMonitoring:
             "source_type": source_type,
             "load_type": load_type,
         }
-        job_details = self.execute_query_and_get_results(query_to_execute, param_dict=param_dict)
+        job_details = self.retry_any_function(
+            self.execute_query_and_get_results,
+            query_to_execute,
+            passed_query_params=param_dict,
+            calling_module=this_module
+        )
         job_details_count = job_details.count()
         job_details_list = job_details.collect()
         if job_details_count == 1:
@@ -137,7 +174,10 @@ class ProcessMonitoring:
             error_msg = f"{this_module} job_details_count --> {job_details_count}, job_details_count != 1, job_details_list --> {job_details_list}"
             self.lc.logger.error(error_msg)
             if raise_exception:
-                raise Exception(error_msg)
+                if dry_run:
+                    self.job_args_obj.set("job_id", "dummmy_job_id")
+                else:
+                    raise Exception(error_msg)
 
     def insert_job_details(self):
         """
@@ -168,7 +208,12 @@ class ProcessMonitoring:
             "source": source,
             "source_type": source_type,
         }
-        self.execute_query_and_get_results(query_to_execute, param_dict=param_dict, fetch_results=False)
+        self.retry_any_function(
+            self.execute_query_and_get_results,
+            query_to_execute,
+            passed_query_params=param_dict,
+            fetch_results=False
+        )
 
     def check_and_get_job_id(self):
         """
@@ -203,23 +248,138 @@ class ProcessMonitoring:
             run_date = passed_run_date
         else:
             run_date = self.job_args_obj.get("run_date")
-
+        run_id = self.job_args_obj.get("run_id")
         query_to_execute = (
-            f"SELECT job_id, run_status, run_error_detail FROM {job_run_details_table_name} WHERE job_id = :job_id AND run_date = :run_date AND UPPER(run_status) = 'COMPLETED'"
+            f"SELECT "
+            f"top_record.* "
+            f"FROM "
+            f"("
+            f"SELECT TOP 1 "
+            f"run_id, job_id, run_date, "
+            f"run_start_time, run_status, run_error_detail "
+            f"FROM "
+            f"{job_run_details_table_name} "
+            f"WHERE "
+            f"UPPER(job_id) = UPPER(:job_id) AND "
+            f"UPPER(run_id) != UPPER(:run_id) AND "
+            f"run_date = :run_date "
+            f"ORDER BY _modified DESC "
+            f") top_record "
+            f"WHERE "
+            f"UPPER(top_record.run_status) in "
+            f"("
+            f"'{RunStatus.COMPLETED.value}', "
+            f"'{RunStatus.COMPLETED_WITH_VAL_WARN.value}', "
+            f"'{RunStatus.ALREADY_COMPLETED.value}'"
+            f")"
         )
-        param_dict = {"job_id": job_id, "run_date": run_date}
-        job_completed_details = self.execute_query_and_get_results(query_to_execute, param_dict=param_dict)
-
+        param_dict = {"job_id": job_id, "run_id": run_id, "run_date": run_date}
+        job_completed_details = self.retry_any_function(
+            self.execute_query_and_get_results,
+            query_to_execute,
+            passed_query_params=param_dict,
+            calling_module=this_module
+        )
         job_already_completed = False
         if job_completed_details.count() == 1:
             job_already_completed = True
         self.job_args_obj.set(f"{job_id}_completed", job_already_completed)
+
+    def check_duplicate_start(
+            self,
+            passed_job_id="",
+            passed_run_date="",
+            passed_wait_before_reprocessing_in_seconds=""
+    ):
+        """
+        Checks if a job is parallely started for the job ID and run date.
+        """
+        this_module = f"[{self.this_class_name}.check_duplicate_start()] -"
+        job_run_details_table_name = self.job_args_obj.get("job_run_details_table_name")
+        self.common_utils.validate_function_param(
+            this_module,
+            {
+                "passed_job_id": {"input_value": passed_job_id, "data_type": "str"},
+                "passed_run_date": {"input_value": passed_run_date, "data_type": "str"},
+            },
+        )
+        if passed_job_id:
+            job_id = passed_job_id
+        else:
+            job_id = self.job_args_obj.get("job_id")
+
+        if passed_run_date:
+            run_date = passed_run_date
+        else:
+            run_date = self.job_args_obj.get("run_date")
+        if passed_wait_before_reprocessing_in_seconds:
+            wait_before_reprocessing_in_seconds = int(
+                passed_wait_before_reprocessing_in_seconds
+            )
+        else:
+            wait_before_reprocessing_in_seconds = int(
+                self.job_args_obj.get("wait_before_reprocessing_in_seconds")
+            )
+        run_id = self.job_args_obj.get("run_id")
+        run_start_time = self.job_args_obj.get("run_start_time")
+        query_to_execute = (
+            f"SELECT "
+            f"top_record.* "
+            f"FROM "
+            f"("
+            f"SELECT TOP 1 "
+            f"run_id, job_id, run_date, "
+            f"run_start_time, run_status, run_error_detail,"
+            f"_created, _modified,"
+            f"CAST(:run_start_time AS DATETIME) AS current_run_start_time, "
+            f":run_id as current_run_id, "
+            f"DATEDIFF("
+            f"second, "
+            f"_modified, "
+            f"CAST(:run_start_time AS DATETIME)"
+            f") AS difference_in_seconds "
+            f"FROM "
+            f"{job_run_details_table_name} "
+            f"WHERE "
+            f"UPPER(job_id) = UPPER(:job_id) AND "
+            f"UPPER(run_id) != UPPER(:run_id) AND "
+            f"run_date = :run_date "
+            f"ORDER BY _modified DESC "
+            f") top_record "
+            f"WHERE "
+            f"top_record.difference_in_seconds <= "
+            f":wait_before_reprocessing_in_seconds AND "
+            f"UPPER(top_record.run_status) in "
+            f"("
+            f"'{RunStatus.STARTED.value}', "
+            f"'{RunStatus.READING_SOURCE_DATA.value}'"
+            f")"
+        )
+        param_dict = {
+            "job_id": job_id,
+            "run_id": run_id,
+            "run_date": run_date,
+            "run_start_time": run_start_time,
+            "wait_before_reprocessing_in_seconds": wait_before_reprocessing_in_seconds
+        }
+        job_duplicate_start_details = self.retry_any_function(
+            self.execute_query_and_get_results,
+            query_to_execute,
+            passed_query_params=param_dict,
+            calling_module=this_module
+        )
+
+        job_duplicate_start = False
+        if job_duplicate_start_details.count() == 1:
+            job_duplicate_start = True
+        self.job_args_obj.set(f"{job_id}_duplicate_start", job_duplicate_start)
 
     def get_and_set_run_id(self):
         """
         Retrieves and sets the run ID for the current job run.
         """
         this_module = f"[{self.this_class_name}.get_and_set_run_id()] -"
+        dry_run = self.job_args_obj.get("dry_run")
         job_run_details_table_name = self.job_args_obj.get("job_run_details_table_name")
         job_id = self.job_args_obj.get("job_id")
         run_date = self.job_args_obj.get("run_date")
@@ -229,7 +389,7 @@ class ProcessMonitoring:
             f"SELECT run_id FROM {job_run_details_table_name} WHERE job_id = :job_id AND run_start_time = CAST(:run_start_time AS DATETIME) AND run_date = :run_date"
         )
         param_dict = {"job_id": job_id, "run_start_time": run_start_time, "run_date": run_date}
-        run_details = self.execute_query_and_get_results(query_to_execute, param_dict=param_dict)
+        run_details = self.execute_query_and_get_results(query_to_execute, passed_query_params=param_dict)
         run_details_count = run_details.count()
         run_details_list = run_details.collect()
 
@@ -241,7 +401,41 @@ class ProcessMonitoring:
                 f"{this_module} run_details_count --> {run_details_count}, run_details_count != 1, run_details_list --> {run_details_list}"
             )
             self.lc.logger.error(error_msg)
-            raise Exception(error_msg)
+            if dry_run:
+                self.job_args_obj.set("run_id", "dummy_run_id")
+            else:
+                raise Exception(error_msg)
+
+    def insert_validation_run_status(self, validation_run_dict):
+        this_module = f"[{self.this_class_name}.insert_validation_run_status()] -"
+        if validation_run_dict == {}:
+            self.lc.logger.info(
+                f"{this_module} "
+                f"No Validation run failures to write, SKIPPING"
+            )
+            return
+
+        validation_run_details_table_name = self.job_args_obj.get("validation_run_details_table_name")
+        run_id = self.job_args_obj.get("run_id")
+        validation_start_time = self.job_args_obj.get("validation_start_time")
+        validation_end_time = self.job_args_obj.get("validation_end_time")
+        now_current_time = self.common_utils.get_current_time()
+
+        query_to_execute = (
+            f"INSERT INTO "
+            f"{validation_run_details_table_name} "
+            f"(run_id, _created, _modified, validation_type, "
+            f"validation_gx_check_class, validation_rule, "
+            f"validation_column_name, validation_start_time, validation_end_time, "
+            f"validation_failed_row_count, validation_status, validation_error_detail) "
+            f"VALUES("
+            f":run_id, "
+            f"CAST(:_created AS DATETIME), "
+            f"CAST(:_modified AS DATETIME), "
+            f":validation_type, "
+            f""
+            f")"
+        )
 
     def insert_update_job_run_status(self, passed_status, passed_comments=""):
         """
@@ -295,6 +489,6 @@ class ProcessMonitoring:
                 "job_id": job_id,
             }
 
-        self.execute_query_and_get_results(query_to_execute, param_dict=param_dict, fetch_results=False)
+        self.execute_query_and_get_results(query_to_execute, passed_query_params=param_dict, fetch_results=False)
         if run_id == "":
             self.get_and_set_run_id()
