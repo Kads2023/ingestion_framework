@@ -1,7 +1,8 @@
 import pyodbc
-import json
+from edap_automation.schema_extractor.base_schema_extractor import (BaseSchemaExtractor)
 
-class SQLServerSchemaExtractor:
+
+class SQLServerSchemaExtractor(BaseSchemaExtractor):
     def __init__(self, connection_string, schema_owner='dbo'):
         self.connection_string = connection_string
         self.schema_owner = schema_owner
@@ -46,7 +47,4 @@ class SQLServerSchemaExtractor:
         columns = [desc[0].lower() for desc in cursor.description]
         results = [dict(zip(columns, row)) for row in cursor.fetchall()]
 
-        with open(output_file, 'w') as f:
-            json.dump(results, f, indent=2)
-
-        print(f"✅ SQL Server metadata written to {output_file}")
+        self.write_to_json(results, output_file)
