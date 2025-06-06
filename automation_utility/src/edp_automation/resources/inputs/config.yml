@@ -1,0 +1,12 @@
+source_system_type: oracle
+data_source_system_name: my_orcale_db
+schema_name: <<MY_ORACLE_SCHEMA>>
+db_user: <<>>
+dsn: <<>>
+schema_file_location: C:/Users/srin8/PycharmProjects/ingestion_framework/automation_utility/src/edp_automation/resources/schemas
+schema_file_name: oracle_schema.json
+template_location: C:/Users/srin8/PycharmProjects/ingestion_framework/automation_utility/src/edp_automation/resources/templates  # Optional
+ddl_template_name: ddl.sql.j2  # Optional
+config_template_name: config.yaml.j2  # Optional
+workflow_template_name: workflow.yaml.j2  # Optional
+output_location: ../resources/output

@@ -3,9 +3,9 @@ from edp_automation.schema_extractor.base_schema_extractor import (BaseSchemaExt
 
 
 class SQLServerSchemaExtractor(BaseSchemaExtractor):
-    def __init__(self, connection_string, schema_owner='dbo'):
-        self.connection_string = connection_string
-        self.schema_owner = schema_owner
+    def __init__(self, **kwargs):
+        self.connection_string = kwargs["connection_string"]
+        self.schema_name = kwargs["schema_name"]
         self.connection = None
 
     def connect(self):
@@ -43,7 +43,7 @@ class SQLServerSchemaExtractor(BaseSchemaExtractor):
         """
 
         cursor = self.connection.cursor()
-        cursor.execute(query, self.schema_owner)
+        cursor.execute(query, self.schema_name)
         columns = [desc[0].lower() for desc in cursor.description]
         results = [dict(zip(columns, row)) for row in cursor.fetchall()]
 

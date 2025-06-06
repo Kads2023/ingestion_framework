@@ -28,8 +28,8 @@ class BaseSchemaExtractor(abc.ABC):
         """
         pass
 
-    def write_to_json(self, data: list[dict], output_file: str):
+    def write_to_json(self, data: list[dict], output_file_path: str):
         """Helper method to write data to a JSON file."""
-        with open(output_file, 'w') as f:
-            json.dump(data, f, indent=2)
-        print(f"✅ Metadata written to {output_file}")
+        with open(output_file_path, 'w') as schema_json:
+            json.dump(data, schema_json, indent=2)
+        print(f"✅ Metadata written to {output_file_path}")

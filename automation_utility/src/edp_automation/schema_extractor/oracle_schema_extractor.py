@@ -1,51 +1,54 @@
-import pyodbc
+import oracledb
+from oracledb import ConnectParams
 from edp_automation.schema_extractor.base_schema_extractor import (BaseSchemaExtractor)
 
 
 class OracleSchemaExtractor(BaseSchemaExtractor):
-    def __init__(self, user, password, dsn, schema_owner):
-        self.user = user
-        self.password = password
-        self.dsn = dsn  # This should be a valid ODBC DSN or connection string
-        self.schema_owner = schema_owner
+    def __init__(self, **kwargs):
+        self.user = kwargs["user"]
+        self.password = kwargs["password"]
+        self.dsn = kwargs["dsn"]
+        self.schema_name = kwargs["schema_name"]
         self.connection = None
 
     def connect(self):
-        self.connection = pyodbc.connect(
-            f"DSN={self.dsn};UID={self.user};PWD={self.password}"
+        ld = r"C:\Apps\Oracle19\x64\Client\19.0\bin"
+        oracledb.init_oracle_client(lib_dir=ld)
+        self.connection = oracledb.connect(
+            params=ConnectParams(user=self.user,password=self.password),
+            dsn=self.dsn
         )
 
     def disconnect(self):
         if self.connection:
             self.connection.close()
 
-    def extract_metadata(self, table_names, output_file='output_oracle_schema.json'):
-        placeholders = ','.join(['?'] * len(table_names))
-        table_names_upper = [name.upper() for name in table_names]
+    def extract_metadata(self, table_names, output_file_path):
+        table_names_str = "', '".join([name.upper() for name in table_names])
 
         query = f"""
             SELECT 
-                c.table_name,
-                c.column_name,
-                c.data_type,
-                c.data_length,
-                c.data_precision,
-                c.data_scale,
-                c.nullable,
-                c.identity_column,
-                cm.comments
+                c.TABLE_NAME "table_name",
+                c.COLUMN_NAME "column_name",
+                c.DATA_TYPE "data_type",
+                c.DATA_LENGTH "data_length",
+                c.DATA_PRECISION "data_precision",
+                c.DATA_SCALE "data_scale",
+                c.NULLABLE "nullable",
+                c.IDENTITY_COLUMN "identity_column",
+                cm.comments "comments"
             FROM ALL_TAB_COLUMNS c
             LEFT JOIN ALL_COL_COMMENTS cm
                 ON c.owner = cm.owner
                 AND c.table_name = cm.table_name
                 AND c.column_name = cm.column_name
-            WHERE c.table_name IN ({placeholders})
-              AND c.owner = ?
+            WHERE c.table_name IN ('{table_names_str}')
+              AND c.owner = '{self.schema_name}'
         """
 
         cursor = self.connection.cursor()
-        cursor.execute(query, table_names_upper + [self.schema_owner])
+        cursor.execute(query)
         columns = [desc[0].lower() for desc in cursor.description]
         results = [dict(zip(columns, row)) for row in cursor.fetchall()]
 
-        self.write_to_json(results, output_file)
+        self.write_to_json(results, output_file_path)

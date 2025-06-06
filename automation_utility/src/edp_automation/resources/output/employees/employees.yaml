@@ -1,21 +1,35 @@
 job_name: EMPLOYEES_Table
 source: employees
+
+
 table_columns_to_be_added:
   - column_name: "edp_hash_key"
     data_type: STRING
     hash_of:
+      
       - EMP_ID
+      
+
 schema:
+
   EMP_ID:
     data_type: DECIMAL(10,0)
+
   EMP_NAME:
     data_type: STRING
+
   JOIN_DATE:
     data_type: TIMESTAMP
+
 validations:
   - name: schema_check
     action_on_unexpected: ERROR
+
+
   - name: null_check
     action_on_unexpected: WARNING
     columns:
+
       - EMP_ID
+
+
