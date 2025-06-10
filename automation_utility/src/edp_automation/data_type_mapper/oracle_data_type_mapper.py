@@ -1,4 +1,4 @@
-from edp_automation.data_type_mapper.base_data_type_mapper import (BaseDataTypeMapper)
+from edp_automation.data_type_mapper.base_data_type_mapper import BaseDataTypeMapper
 
 
 class OracleDataTypeMapper(BaseDataTypeMapper):
@@ -24,7 +24,16 @@ class OracleDataTypeMapper(BaseDataTypeMapper):
         "INTERVAL DAY TO SECOND": "STRING",
     }
 
-    def map_type(self, column):
-        oracle_type = column['data_type'].upper()
-        mapping = self.ORACLE_TYPE_MAPPING.get(oracle_type, "STRING")
-        return mapping(column) if callable(mapping) else mapping
+    def map_type(self, column_metadata):
+        if not isinstance(column_metadata, dict):
+            raise TypeError("Expected 'column_metadata' to be a dictionary")
+
+        if 'data_type' not in column_metadata:
+            raise KeyError("Missing required key: 'data_type' in column_metadata")
+
+        oracle_type = column_metadata['data_type'].upper()
+        if oracle_type not in self.ORACLE_TYPE_MAPPING:
+            raise ValueError(f"Unsupported Oracle data type: '{oracle_type}'")
+
+        mapping = self.ORACLE_TYPE_MAPPING[oracle_type]
+        return mapping(column_metadata) if callable(mapping) else mapping
