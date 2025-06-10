@@ -22,11 +22,17 @@ class DataTypeMapperFactory:
             class_file_name = f"{final_source_system_type}_data_type_mapper"
             class_name = f"{final_source_system_type.capitalize()}DataTypeMapper"
             module_path = f"edp_automation.data_type_mapper.{class_file_name}"
-
             class_module = importlib.import_module(module_path)
+
             class_ref = getattr(class_module, class_name, None)
+            print(
+                f"{this_module} "
+                f"class_name --> {class_name}, "
+                f"type of class_ref --> {type(class_ref)}"
+            )
             if class_ref is None:
                 raise ImportError(f"Class {class_name} not found in module {module_path}")
+
             mapper_obj: BaseDataTypeMapper = class_ref()
             print(
                 f"{this_module} "
