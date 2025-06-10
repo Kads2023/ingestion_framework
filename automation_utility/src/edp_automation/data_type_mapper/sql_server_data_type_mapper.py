@@ -9,7 +9,8 @@ class SQLServerDataTypeMapper(BaseDataTypeMapper):
         "SMALLINT": "SMALLINT",
         "TINYINT": "TINYINT",
         "DECIMAL": lambda col: f"DECIMAL({col.get('data_precision', 10)},{col.get('data_scale', 0)})",
-        "NUMERIC": lambda col: f"DECIMAL({col.get('data_precision', 10)},{col.get('data_scale', 0)})",
+        "NUMERIC": lambda col: f"DECIMAL({col.get('data_precision', 10)},{col.get('data_scale', 0)})"
+        if col.get("data_precision") is not None else "BIGINT",
         "VARCHAR": "STRING",
         "NVARCHAR": "STRING",
         "CHAR": "STRING",
