@@ -24,7 +24,19 @@ class OracleSchemaExtractor(BaseSchemaExtractor):
             self.connection.close()
 
     def extract_metadata(self, table_names, output_file_path):
-        table_names_str = "', '".join([name.upper() for name in table_names])
+        table_names_upper = [name.upper() for name in table_names]
+        i = 0
+        placeholders_list = []
+        params = {
+            "owner_name": self.schema_name
+        }
+        for each_table_name in table_names_upper:
+            now_table_key = f":table_names_list_{i}"
+            placeholders_list.append(now_table_key)
+            params[now_table_key] = each_table_name
+            i += 1
+
+        placeholders = ', '.join(placeholders_list)
 
         query = f"""
             SELECT 
@@ -42,13 +54,17 @@ class OracleSchemaExtractor(BaseSchemaExtractor):
                 ON c.owner = cm.owner
                 AND c.table_name = cm.table_name
                 AND c.column_name = cm.column_name
-            WHERE c.table_name IN ('{table_names_str}')
-              AND c.owner = '{self.schema_name}'
+            WHERE c.table_name IN ({placeholders})
+              AND c.owner = :owner_name
         """
 
+        print(f"Executing query --> {query}")
+        print(f"params --> {params}")
+
         cursor = self.connection.cursor()
-        cursor.execute(query)
+        cursor.execute(query, params)
         columns = [desc[0].lower() for desc in cursor.description]
         results = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        print(f"results --> {results}")
 
         self.write_to_json(results, output_file_path)

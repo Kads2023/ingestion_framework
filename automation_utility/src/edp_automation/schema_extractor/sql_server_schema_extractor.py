@@ -15,8 +15,20 @@ class SQLServerSchemaExtractor(BaseSchemaExtractor):
         if self.connection:
             self.connection.close()
 
-    def extract_metadata(self, table_names, output_file='output_sqlserver_schema.json'):
-        table_names_str = "', '".join([name.upper() for name in table_names])
+    def extract_metadata(self, table_names, output_file_path):
+        table_names_upper = [name.upper() for name in table_names]
+        i = 0
+        placeholders_list = []
+        params = {
+            "owner_name": self.schema_name
+        }
+        for each_table_name in table_names_upper:
+            now_table_key = f":table_names_list_{i}"
+            placeholders_list.append(now_table_key)
+            params[now_table_key] = each_table_name
+            i += 1
+
+        placeholders = ', '.join(placeholders_list)
 
         query = f"""
             SELECT 
@@ -38,13 +50,17 @@ class SQLServerSchemaExtractor(BaseSchemaExtractor):
             LEFT JOIN sys.extended_properties ep 
                 ON OBJECT_ID(t.TABLE_SCHEMA + '.' + t.TABLE_NAME) = ep.major_id
                 AND ep.minor_id = c.ORDINAL_POSITION
-            WHERE t.TABLE_SCHEMA = ?
-              AND t.TABLE_NAME IN ('{table_names_str}')
+            WHERE t.TABLE_SCHEMA = :owner_name
+              AND t.TABLE_NAME IN ({placeholders})
         """
 
+        print(f"Executing query --> {query}")
+        print(f"params --> {params}")
+
         cursor = self.connection.cursor()
-        cursor.execute(query, self.schema_name)
+        cursor.execute(query, params)
         columns = [desc[0].lower() for desc in cursor.description]
         results = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        print(f"results --> {results}")
 
-        self.write_to_json(results, output_file)
+        self.write_to_json(results, output_file_path)
