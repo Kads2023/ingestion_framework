@@ -7,6 +7,10 @@ setup(
     author="ksaradha",
     description="a simple python wheel",
     packages=find_packages(),
+    include_package_data=True,
+    package_data={
+        "edp_automation.resources.templates": ["*.j2"],
+    },
     install_requires=[
         'setuptools'
     ]
