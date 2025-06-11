@@ -11,6 +11,11 @@ setup(
     package_data={
         "edp_automation.resources.templates": ["*.j2"],
     },
+    entry_points={
+        "console_scripts": [
+            "generate-artifacts = edp_automation.utils.generate_artifacts:main",
+        ],
+    },
     install_requires=[
         'setuptools'
     ]
