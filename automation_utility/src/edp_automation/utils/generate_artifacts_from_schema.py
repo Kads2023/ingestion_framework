@@ -1,7 +1,22 @@
 import json
 import os
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, BaseLoader, Template
+import importlib.resources as pkg_resources
+from edp_automation import resources
 from edp_automation.data_type_mapper.data_type_mapper_factory import DataTypeMapperFactory
+
+
+class ResourceTemplateLoader(BaseLoader):
+    def __init__(self, package):
+        self.package = package
+
+    def get_source(self, environment, template):
+        try:
+            with pkg_resources.files(self.package).joinpath(template).open("r", encoding="utf-8") as f:
+                source = f.read()
+        except FileNotFoundError:
+            raise TemplateNotFound(template)
+        return source, None, lambda: True
 
 
 def generate_artifacts(config: dict):
@@ -20,16 +35,18 @@ def generate_artifacts(config: dict):
     with open(schema_file_path, "r") as f:
         schema_data = json.load(f)
 
-    # Template settings
-    template_path = config.get("template_location") or os.path.join(
-        os.path.dirname(__file__), "../resources/templates"
-    )
+    # Use resource loader if no custom template path is provided
+    custom_template_path = config.get("template_location")
     ddl_template_name = config.get("ddl_template_name", "ddl.sql.j2")
     config_template_name = config.get("config_template_name", "config.yaml.j2")
     workflow_template_name = config.get("workflow_template_name", "workflow.yaml.j2")
 
-    # Setup Jinja2 environment
-    env = Environment(loader=FileSystemLoader(template_path))
+    if custom_template_path:
+        env = Environment(loader=FileSystemLoader(custom_template_path))
+    else:
+        # Use internal templates packaged within the wheel
+        env = Environment(loader=ResourceTemplateLoader(resources.templates))
+
     ddl_template = env.get_template(ddl_template_name)
     config_template = env.get_template(config_template_name)
     workflow_template = env.get_template(workflow_template_name)
