@@ -1,7 +1,22 @@
 import json
 import os
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, BaseLoader, TemplateNotFound, FileSystemLoader
+import importlib.resources as pkg_resources
+import edp_automation.resources.templates as templates_dir
 from edp_automation.data_type_mapper.data_type_mapper_factory import DataTypeMapperFactory
+
+
+class ResourceTemplateLoader(BaseLoader):
+    def __init__(self, package):
+        self.package = package
+
+    def get_source(self, environment, template):
+        try:
+            with pkg_resources.files(self.package).joinpath(template).open("r", encoding="utf-8") as f:
+                source = f.read()
+        except FileNotFoundError:
+            raise TemplateNotFound(template)
+        return source, None, lambda: True
 
 
 def generate_artifacts(config: dict):
@@ -18,11 +33,24 @@ def generate_artifacts(config: dict):
     with open(schema_file_path, "r") as f:
         schema_data = json.load(f)
 
-    # Setup Jinja2 environment
-    template_path = config.get("template_location") or os.path.join(
-        os.path.dirname(__file__), "../resources/templates"
-    )
-    env = Environment(loader=FileSystemLoader(template_path))
+    # Use resource loader if no custom template path is provided
+    custom_template_path = config.get("template_location")
+
+    if custom_template_path:
+        env = Environment(
+            loader=FileSystemLoader(custom_template_path),
+            trim_blocks=True,
+            lstrip_blocks=True,
+            keep_trailing_newline=True
+        )
+    else:
+        # Use internal templates packaged within the wheel
+        env = Environment(
+            loader=ResourceTemplateLoader(templates_dir),
+            trim_blocks=True,
+            lstrip_blocks=True,
+            keep_trailing_newline=True
+        )
 
     # Optional additional templates
     extra_templates = config.get("extra_templates", [])  # List of dicts with template_name and output_file_name
