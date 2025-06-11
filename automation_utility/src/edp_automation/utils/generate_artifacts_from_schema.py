@@ -24,11 +24,6 @@ def generate_artifacts(config: dict):
     )
     env = Environment(loader=FileSystemLoader(template_path))
 
-    # Load core templates
-    ddl_template = env.get_template(config.get("ddl_template_name", "ddl.sql.j2"))
-    config_template = env.get_template(config.get("config_template_name", "config.yaml.j2"))
-    workflow_template = env.get_template(config.get("workflow_template_name", "workflow.yaml.j2"))
-
     # Optional additional templates
     extra_templates = config.get("extra_templates", [])  # List of dicts with template_name and output_file_name
 
@@ -65,19 +60,34 @@ def generate_artifacts(config: dict):
 
         # Standard files
         if artifacts_to_generate in ("ddl", "all"):
+            ddl_template = env.get_template(config.get("ddl_template_name", "ddl.sql.j2"))
+            ddl_file_name = config.get("ddl_file_name", f"{table_name.upper()}.sql").format(
+                    data_source_system_name=data_source_system_name.lower(),
+                    table_name=table_name.lower()
+                )
             ddl_output = ddl_template.render(context)
-            with open(os.path.join(table_dir, f"{table_name.upper()}.sql"), "w") as f:
+            with open(os.path.join(f"{table_dir}", ddl_file_name), "w") as f:
                 f.write(ddl_output + '\n')
 
         if artifacts_to_generate in ("config", "all"):
+            config_template = env.get_template(config.get("config_template_name", "config.yaml.j2"))
+            config_file_name = config.get("config_file_name", f"{table_name.lower()}.yaml").format(
+                    data_source_system_name=data_source_system_name.lower(),
+                    table_name=table_name.lower()
+                )
             config_output = config_template.render(context)
-            with open(os.path.join(table_dir, f"{table_name.lower()}.yaml"), "w") as f:
+            with open(os.path.join(f"{table_dir}", config_file_name), "w") as f:
                 f.write(config_output + '\n')
 
         if artifacts_to_generate in ("workflow", "all"):
-            workflow_output = workflow_template.render(context)
+            workflow_template = env.get_template(config.get("workflow_template_name", "workflow.yaml.j2"))
             workflow_name = f"edp_bronze_{data_source_system_name.lower()}_{table_name.lower()}.yaml"
-            with open(os.path.join(table_dir, workflow_name), "w") as f:
+            workflow_file_name = config.get("config_file_name", workflow_name).format(
+                    data_source_system_name=data_source_system_name.lower(),
+                    table_name=table_name.lower()
+                )
+            workflow_output = workflow_template.render(context)
+            with open(os.path.join(f"{table_dir}", workflow_file_name), "w") as f:
                 f.write(workflow_output.strip() + '\n')
 
         # Extra templates with dynamic output filenames
@@ -92,7 +102,7 @@ def generate_artifacts(config: dict):
                     table_name=table_name.lower()
                 )
 
-                output_file_path = os.path.join(table_dir, output_file_name)
+                output_file_path = os.path.join(f"{table_dir}", output_file_name)
                 with open(output_file_path, "w") as f:
                     f.write(output + '\n')
             except Exception as e:
