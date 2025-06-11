@@ -1,57 +1,38 @@
 import json
 import os
-from jinja2 import Environment, BaseLoader, FileSystemLoader, TemplateNotFound
-import importlib.resources as pkg_resources
-from edp_automation import resources
+from jinja2 import Environment, FileSystemLoader
 from edp_automation.data_type_mapper.data_type_mapper_factory import DataTypeMapperFactory
-
-
-class ResourceTemplateLoader(BaseLoader):
-    def __init__(self, package):
-        self.package = package
-
-    def get_source(self, environment, template):
-        try:
-            with pkg_resources.files(self.package).joinpath(template).open("r", encoding="utf-8") as f:
-                source = f.read()
-        except FileNotFoundError:
-            raise TemplateNotFound(template)
-        return source, None, lambda: True
 
 
 def generate_artifacts(config: dict):
     """
-    Generates DDL and config YAML using Jinja2 templates.
+    Generates DDL, config YAML, workflow YAML, and optionally other artifacts using Jinja2 templates.
 
     Args:
         config (dict): Contains schema file path, template settings, and output location.
     """
-    # Load schema JSON
     schema_file_path = os.path.join(config["schema_file_location"], config["schema_file_name"])
-
     if not os.path.exists(schema_file_path):
         raise FileNotFoundError(f"Schema file '{schema_file_path}' not found.")
 
     with open(schema_file_path, "r") as f:
         schema_data = json.load(f)
 
-    # Use resource loader if no custom template path is provided
-    custom_template_path = config.get("template_location")
-    ddl_template_name = config.get("ddl_template_name", "ddl.sql.j2")
-    config_template_name = config.get("config_template_name", "config.yaml.j2")
-    workflow_template_name = config.get("workflow_template_name", "workflow.yaml.j2")
+    # Setup Jinja2 environment
+    template_path = config.get("template_location") or os.path.join(
+        os.path.dirname(__file__), "../resources/templates"
+    )
+    env = Environment(loader=FileSystemLoader(template_path))
 
-    if custom_template_path:
-        env = Environment(loader=FileSystemLoader(custom_template_path))
-    else:
-        # Use internal templates packaged within the wheel
-        env = Environment(loader=ResourceTemplateLoader(resources.templates))
+    # Load core templates
+    ddl_template = env.get_template(config.get("ddl_template_name", "ddl.sql.j2"))
+    config_template = env.get_template(config.get("config_template_name", "config.yaml.j2"))
+    workflow_template = env.get_template(config.get("workflow_template_name", "workflow.yaml.j2"))
 
-    ddl_template = env.get_template(ddl_template_name)
-    config_template = env.get_template(config_template_name)
-    workflow_template = env.get_template(workflow_template_name)
+    # Optional additional templates
+    extra_templates = config.get("extra_templates", [])  # List of dicts with template_name and output_file_name
 
-    # Get mapper
+    artifacts_to_generate = config.get("artifacts_to_generate", "all").lower()
     mapper = DataTypeMapperFactory.get_mapper(config["source_system_type"].lower())
 
     # Group columns by table
@@ -67,13 +48,11 @@ def generate_artifacts(config: dict):
             'comment': entry.get('comments', '')
         })
 
-    # Output generation
     output_dir = config["output_location"]
     os.makedirs(output_dir, exist_ok=True)
 
     data_source_system_name = config["data_source_system_name"]
 
-    # Render and write files
     for table_name, columns in table_columns.items():
         context = {
             'table_name': table_name,
@@ -81,29 +60,42 @@ def generate_artifacts(config: dict):
             'data_source_system_name': data_source_system_name,
         }
 
-        ddl_output = ddl_template.render(context)
-        config_output = config_template.render(context)
-        workflow_output = workflow_template.render(context)
-
         table_dir = os.path.join(output_dir, table_name.lower())
         os.makedirs(table_dir, exist_ok=True)
 
-        with open(os.path.join(f"{table_dir}", f"{table_name.upper()}.sql"), "w") as ddl_file:
-            ddl_file.write(ddl_output + '\n')
+        # Standard files
+        if artifacts_to_generate in ("ddl", "all"):
+            ddl_output = ddl_template.render(context)
+            with open(os.path.join(table_dir, f"{table_name.upper()}.sql"), "w") as f:
+                f.write(ddl_output + '\n')
 
-        with open(os.path.join(f"{table_dir}", f"{table_name.lower()}.yaml"), "w") as config_file:
-            config_file.write(config_output + '\n')
+        if artifacts_to_generate in ("config", "all"):
+            config_output = config_template.render(context)
+            with open(os.path.join(table_dir, f"{table_name.lower()}.yaml"), "w") as f:
+                f.write(config_output + '\n')
 
-        with open(
-                os.path.join(
-                    f"{table_dir}",
-                    f"edp_bronze_{data_source_system_name.lower()}_{table_name.lower()}.yaml"),
-                "w"
-        ) as workflow_yaml_file:
-            workflow_yaml_file.write(workflow_output.strip() + '\n')
+        if artifacts_to_generate in ("workflow", "all"):
+            workflow_output = workflow_template.render(context)
+            workflow_name = f"edp_bronze_{data_source_system_name.lower()}_{table_name.lower()}.yaml"
+            with open(os.path.join(table_dir, workflow_name), "w") as f:
+                f.write(workflow_output.strip() + '\n')
 
-        print(
-            f"Generated: {table_name}.sql, "
-            f"{table_name.lower()}.yaml and "
-            f"edp_bronze_{data_source_system_name.lower()}_{table_name.lower()}.yaml"
-        )
+        # Extra templates with dynamic output filenames
+        for extra in extra_templates:
+            try:
+                template = env.get_template(extra["template_name"])
+                output = template.render(context)
+
+                # Allow placeholders in output_file_name, e.g. edp_{data_source_system_name}_{table_name}.txt
+                output_file_name = extra["output_file_name"].format(
+                    data_source_system_name=data_source_system_name.lower(),
+                    table_name=table_name.lower()
+                )
+
+                output_file_path = os.path.join(table_dir, output_file_name)
+                with open(output_file_path, "w") as f:
+                    f.write(output + '\n')
+            except Exception as e:
+                print(f"Error processing extra template {extra.get('template_name')}: {e}")
+
+        print(f"Generated files for {table_name}")

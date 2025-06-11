@@ -5,8 +5,20 @@ db_user: <<>>
 dsn: <<>>
 schema_file_location: C:/Users/srin8/PycharmProjects/ingestion_framework/automation_utility/src/edp_automation/resources/schemas
 schema_file_name: oracle_schema.json
-template_location: C:/Users/srin8/PycharmProjects/ingestion_framework/automation_utility/src/edp_automation/resources/templates  # Optional
-ddl_template_name: ddl.sql.j2  # Optional
-config_template_name: config.yaml.j2  # Optional
-workflow_template_name: workflow.yaml.j2  # Optional
+
+template_location: C:/Users/srin8/PycharmProjects/ingestion_framework/automation_utility/src/edp_automation/resources/templates  # Optional, can be omitted to use defaults
+ddl_template_name: ddl.sql.j2                   # Optional, default fallback available
+config_template_name: config.yaml.j2             # Optional
+workflow_template_name: workflow.yaml.j2         # Optional
+
 output_location: ../resources/output
+
+# Optional, generate mode: ddl, config, workflow, all
+generate_mode: all
+
+# Optional extra templates list
+extra_templates:
+  - template_name: custom_report.j2
+    output_file_name: edp_{data_source_system_name}_{table_name}_report.txt
+  - template_name: extra_notes.j2
+    output_file_name: notes_{table_name}.md
