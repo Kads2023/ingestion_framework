@@ -2,6 +2,8 @@ from edap_ingest.ingest.base_ingest import BaseIngest
 from pyspark.sql import DataFrame as Spark_Dataframe
 from pyspark.sql.window import Window
 from pyspark.sql import functions as F
+from delta.tables import DeltaTable
+
 
 class DeltaIngest(BaseIngest):
     def __init__(
@@ -59,28 +61,27 @@ class DeltaIngest(BaseIngest):
                     raise ValueError(error_msg)
 
         # Deduplication if requested
-		if deduplication_conf:
-			keys = deduplication_conf.get("keys", [])
-			order_by = deduplication_conf.get("order_by", [])  # now expected to be list of dicts
+        if deduplication_conf:
+            keys = deduplication_conf.get("keys", [])
+            order_by = deduplication_conf.get("order_by", [])  # list of dicts with column and direction
+            if keys and order_by:
+                self.lc.logger.info(f"{this_module} Applying deduplication on keys={keys} order_by={order_by}")
 
-			if keys and order_by:
-				self.lc.logger.info(f"{this_module} Applying deduplication on keys={keys} order_by={order_by}")
+                # Build list of column expressions for ordering
+                order_cols = []
+                for order_spec in order_by:
+                    col_name = order_spec.get("column")
+                    direction = order_spec.get("direction", "asc").lower()
+                    if direction == "desc":
+                        order_cols.append(F.col(col_name).desc())
+                    else:
+                        order_cols.append(F.col(col_name).asc())
 
-				# Build list of column expressions for ordering
-				order_cols = []
-				for order_spec in order_by:
-					col_name = order_spec.get("column")
-					direction = order_spec.get("direction", "asc").lower()
-					if direction == "desc":
-						order_cols.append(F.col(col_name).desc())
-					else:
-						order_cols.append(F.col(col_name).asc())
+                window_spec = Window.partitionBy(*keys).orderBy(*order_cols)
 
-				window_spec = Window.partitionBy(*keys).orderBy(*order_cols)
-
-				df = df.withColumn("_rn", F.row_number().over(window_spec)) \
-					   .filter(F.col("_rn") == 1) \
-					   .drop("_rn")
+                df = df.withColumn("_rn", F.row_number().over(window_spec)) \
+                       .filter(F.col("_rn") == 1) \
+                       .drop("_rn")
 
         # Rename columns if mapping is provided
         if column_mappings:
@@ -107,9 +108,56 @@ class DeltaIngest(BaseIngest):
 
         return df
 
-    def write_data_to_target_table(self, data_to_write):
+    def merge_data_to_target_table(self, source_df: Spark_Dataframe):
+        this_module = f"[{self.this_class_name}.merge_data_to_target_table()] -"
+        merge_conf = self.job_args_obj.get("merge", None)
+        if not merge_conf:
+            raise ValueError(f"{this_module} Merge configuration missing")
+
+        target_table = merge_conf.get("target_table")
+        merge_keys = merge_conf.get("merge_keys", [])
+        update_columns = merge_conf.get("update_columns", [])
+        delete_condition = merge_conf.get("delete_condition", None)
+
+        if not target_table or not merge_keys:
+            raise ValueError(f"{this_module} target_table and merge_keys must be specified for merge")
+
+        self.lc.logger.info(f"{this_module} Starting merge into {target_table} on keys {merge_keys}")
+
+        delta_table = DeltaTable.forName(self.spark, target_table)
+
+        merge_condition = " AND ".join([f"target.{k} = source.{k}" for k in merge_keys])
+
+        merge_builder = (
+            delta_table.alias("target")
+            .merge(source_df.alias("source"), merge_condition)
+            .whenMatchedUpdate(
+                condition=None,
+                set={col: f"source.{col}" for col in update_columns}
+            )
+            .whenNotMatchedInsertAll()
+        )
+
+        if delete_condition:
+            merge_builder = merge_builder.whenMatchedDelete(condition=delete_condition)
+
+        merge_builder.execute()
+        self.lc.logger.info(f"{this_module} Merge completed successfully")
+
+    def write_data_to_target_table(self, data_to_write: Spark_Dataframe):
         this_module = f"[{self.this_class_name}.write_data_to_target_table()] -"
         dry_run = self.job_args_obj.get("dry_run")
+        merge_conf = self.job_args_obj.get("merge", None)
+
+        if dry_run:
+            self.lc.logger.info(f"{this_module} Dry run enabled - skipping write/merge")
+            return
+
+        if merge_conf:
+            # Perform merge instead of simple write
+            self.merge_data_to_target_table(data_to_write)
+            return
+
         target_location = self.job_args_obj.get_mandatory("target_location")
         write_mode = self.job_args_obj.get("write_mode", "append").lower()
         partition_by = self.job_args_obj.get("partition_by", None)  # list or None
