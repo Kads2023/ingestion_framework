@@ -393,6 +393,11 @@ class BaseIngest:
         this_module = f"[{self.this_class_name}.write_data_to_target_table()] -"
         dry_run = self.job_args_obj.get("dry_run")
         target_location = self.job_args_obj.get_mandatory("target_location")
+
+        # Check if table exists
+        if not self.spark.catalog.tableExists(target_location):
+            raise ValueError(f"{this_module} Target table '{target_location}' not found.")
+
         run_row_count = data_to_write.count()
         self.job_args_obj.set("run_row_count", run_row_count)
         if not dry_run:
