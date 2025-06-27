@@ -406,6 +406,7 @@ class BaseIngest:
     def write_data_to_quarantine_table(self, validation_issues_data):
         """
         Writes records with validation issues to the quarantine table if not a dry run.
+        Enables schema evolution during the write.
 
         Args:
             validation_issues_data (Spark_Dataframe): DataFrame containing invalid records.
@@ -416,9 +417,10 @@ class BaseIngest:
             "quarantine_target_location"
         )
         if not dry_run:
-            validation_issues_data.write.mode("append").saveAsTable(
-                quarantine_target_location
-            )
+            validation_issues_data.write \
+                .mode("append") \
+                .option("mergeSchema", "true") \
+                .saveAsTable(quarantine_target_location)
 
     def load(self):
         """
