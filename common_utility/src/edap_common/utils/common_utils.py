@@ -154,6 +154,42 @@ class CommonUtils:
             )
             raise
 
+    def read_file_as_string(self, passed_file_path):
+        """
+        Reads the contents of a file and returns it as a string.
+
+        Args:
+            passed_file_path (str): Path to the file.
+
+        Returns:
+            str: Content of the file.
+
+        Raises:
+            FileNotFoundError: If the file does not exist.
+            PermissionError: If access to the file is denied.
+            ValueError: If the file path is invalid.
+            IOError: For any other I/O related errors.
+        """
+        this_module = f"[{self.this_class_name}.read_file_as_string()] -"
+        self.validate_function_param(
+            this_module,
+            {
+                "passed_file_path": {
+                    "input_value": passed_file_path,
+                    "data_type": "str",
+                    "check_empty": True,
+                },
+            },
+        )
+        try:
+            with open(passed_file_path, 'r', encoding='utf-8') as file_content:
+                return file_content.read()
+        except FileNotFoundError:
+            raise FileNotFoundError(f"The file '{passed_file_path}' does not exist.")
+        except PermissionError:
+            raise PermissionError(f"Permission denied to read the file: {passed_file_path}")
+        except OSError as e:
+            raise IOError(f"Failed to read file '{passed_file_path}': {e}")
 
     def validate_function_param_old(self, passed_module, params_dict: dict):
         this_module = f"[{self.this_class_name}.validate_function_param_old()] - {passed_module} -"

@@ -406,3 +406,48 @@ def test_add_literal_column_duplicate_col(common_utils, spark_df_mock, monkeypat
     spark_df_mock.columns.append("lit_col")
     with pytest.raises(ValueError):
         common_utils.add_literal_column(spark_df_mock, "lit_col", "value")
+
+def test_read_file_as_string_success(common_utils, monkeypatch):
+    mock_file_data = "SELECT * FROM users;"
+    m_open = mock_open(read_data=mock_file_data)
+
+    monkeypatch.setattr("builtins.open", m_open)
+
+    result = common_utils.read_file_as_string("/dbfs/tmp/test.sql")
+    assert result == mock_file_data
+    m_open.assert_called_once_with("/dbfs/tmp/test.sql", "r", encoding="utf-8")
+
+
+def test_read_file_as_string_invalid_path(common_utils):
+    with pytest.raises(ValueError, match="Invalid file path provided"):
+        common_utils.read_file_as_string("   ")
+
+
+def test_read_file_as_string_file_not_found(common_utils, monkeypatch):
+    def mock_open_fn(*args, **kwargs):
+        raise FileNotFoundError("No such file")
+
+    monkeypatch.setattr("builtins.open", mock_open_fn)
+
+    with pytest.raises(FileNotFoundError, match="does not exist"):
+        common_utils.read_file_as_string("/dbfs/tmp/missing.sql")
+
+
+def test_read_file_as_string_permission_denied(common_utils, monkeypatch):
+    def mock_open_fn(*args, **kwargs):
+        raise PermissionError("Permission denied")
+
+    monkeypatch.setattr("builtins.open", mock_open_fn)
+
+    with pytest.raises(PermissionError, match="Permission denied"):
+        common_utils.read_file_as_string("/dbfs/tmp/restricted.sql")
+
+
+def test_read_file_as_string_os_error(common_utils, monkeypatch):
+    def mock_open_fn(*args, **kwargs):
+        raise OSError("Disk error")
+
+    monkeypatch.setattr("builtins.open", mock_open_fn)
+
+    with pytest.raises(IOError, match="Disk error"):
+        common_utils.read_file_as_string("/dbfs/tmp/broken.sql")
