@@ -288,22 +288,53 @@ class BaseIngest:
                                       f"{quarantine_target_table}")
         self.job_args_obj.set("quarantine_target_location", quarantine_target_location)
 
+    # Explanation:
+    # We create a dictionary table_columns_lookup keyed by column_name for quick lookup.
+    #
+    # We iterate over audit columns first:
+    #
+    # If a column is overridden in table columns, use the table column definition.
+    #
+    # Else keep the audit column definition.
+    #
+    # Then add any table columns that are not present in audit columns (to avoid duplicates).
+    #
+    # This keeps the original audit columns order, overriding duplicates, then appends any extra table columns, preserving their order.
+    
     def collate_columns_to_add(self):
         """
         Collates audit and table columns to be added during ingestion
         and stores the combined list in the job arguments object.
+        If a column name appears in both audit and table columns,
+        the definition from table_columns_to_be_added is used.
+        The order of columns is preserved: audit columns first, but overridden if present in table columns,
+        then table columns that are not in audit columns.
         """
         this_module = f"[{self.this_class_name}.collate_columns_to_add()] -"
         self.lc.logger.info(f"Inside {this_module}")
-        audit_columns_to_be_added = self.job_args_obj.get(
-            "audit_columns_to_be_added"
-        )
-        table_columns_to_be_added = self.job_args_obj.get(
-            "table_columns_to_be_added"
-        )
+
+        audit_columns_to_be_added = self.job_args_obj.get("audit_columns_to_be_added") or []
+        table_columns_to_be_added = self.job_args_obj.get("table_columns_to_be_added") or []
+
+        # Create a lookup for table columns by column_name for quick override check
+        table_columns_lookup = {col["column_name"]: col for col in table_columns_to_be_added}
+
         columns_to_be_added = []
-        columns_to_be_added.extend(audit_columns_to_be_added)
-        columns_to_be_added.extend(table_columns_to_be_added)
+
+        # Add audit columns, overridden by table columns if exists
+        for audit_col in audit_columns_to_be_added:
+            col_name = audit_col["column_name"]
+            if col_name in table_columns_lookup:
+                columns_to_be_added.append(table_columns_lookup[col_name])
+            else:
+                columns_to_be_added.append(audit_col)
+
+        # Add table columns that were not in audit columns
+        audit_col_names = {col["column_name"] for col in audit_columns_to_be_added}
+        for table_col in table_columns_to_be_added:
+            if table_col["column_name"] not in audit_col_names:
+                columns_to_be_added.append(table_col)
+
         self.job_args_obj.set("columns_to_be_added", columns_to_be_added)
 
     def check_multi_line_file_option(self):
