@@ -147,10 +147,19 @@ class CommonUtils:
             with open(passed_file_path, "r") as file_data:
                 ret_dict = yaml.safe_load(file_data)
                 return ret_dict
+        except FileNotFoundError as fnf:
+            self.lc.logger.error(
+                f"{this_module} FileNotFoundError: YAML file not found at {passed_file_path} - {fnf}"
+            )
+            raise
+        except yaml.YAMLError as ye:
+            self.lc.logger.error(
+                f"{this_module} YAMLError: Error parsing YAML file {passed_file_path} - {ye}"
+            )
+            raise
         except Exception as e:
             self.lc.logger.error(
-                f"{this_module} Exception : "
-                f"error while creating dbutils object ({e})"
+                f"{this_module} Unexpected Exception: error while reading YAML file ({e})"
             )
             raise
 
