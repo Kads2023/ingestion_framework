@@ -98,3 +98,4 @@ def test_read_yaml_file_unexpected_error(dummy, monkeypatch):
 
     dummy.lc.logger.error.assert_called_once()
     assert "Unexpected Exception" in dummy.lc.logger.error.call_args[0][0]
+
