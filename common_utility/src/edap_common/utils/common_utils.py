@@ -20,6 +20,7 @@ import time
 
 from edap_common.utils.constants import *
 # from edap_common.utils.log_wrapper import LogWrapper
+from pyspark.sql.utils import AnalysisException
 
 
 class CommonUtils:
@@ -31,6 +32,7 @@ class CommonUtils:
         self.this_class_name = f"{type(self).__name__}"
         self.lc = lc
         # self.log_wrapper = LogWrapper(lc)
+        self.spark = SparkSession.getActiveSession()
 
     # def log_msg(self, passed_log_string, passed_logger_type=default_log_type):
     #     self.log_wrapper.log_or_print(passed_log_string, passed_logger_type)
@@ -544,4 +546,221 @@ class CommonUtils:
                 f"\nTRACEBACK --> \n{traceback.format_exc()}\n"
             )
             self.lc.logger.error(error_msg)
+            raise
+
+    def execute_sql_on_dataframe(self, input_df, sql_string):
+        this_module = f"[{self.this_class_name}.execute_sql_on_dataframe()] -"
+
+        # Validate parameters
+        self.validate_function_param(
+            this_module,
+            {
+                "input_df": {
+                    "input_value": input_df,
+                    "data_type": "spark_dataframe",
+                    "check_empty": True,
+                },
+                "sql_string": {
+                    "input_value": sql_string,
+                    "data_type": "str",
+                    "check_empty": True,
+                },
+            }
+        )
+
+        try:
+            # Generate a temporary view name
+            temp_view_name = f"temp_view_{str(abs(hash(input_df)))}"
+
+            self.lc.logger.info(
+                f"{this_module} Registering temp view '{temp_view_name}' with columns: {input_df.columns}"
+            )
+
+            # Register the DataFrame as a temp view
+            input_df.createOrReplaceTempView(temp_view_name)
+
+            # Replace reference to input_df with the temp view in SQL
+            sql_to_execute = sql_string.format(source_data=temp_view_name)
+
+            self.lc.logger.info(
+                f"{this_module} Executing SQL: {sql_to_execute}"
+            )
+
+            # Execute the SQL query
+            result_df = self.spark.sql(sql_to_execute)
+
+            self.lc.logger.info(
+                f"{this_module} Successfully executed SQL on DataFrame"
+            )
+
+            return result_df
+
+        except AnalysisException as e:
+            error_msg = (
+                f"{this_module} AnalysisException while executing SQL --> {sql_string} "
+                f"\nException: {e}\nTRACEBACK:\n{traceback.format_exc()}"
+            )
+            self.lc.logger.error(error_msg)
+            raise
+
+        except Exception as e:
+            error_msg = (
+                f"{this_module} Exception while executing SQL --> {sql_string} "
+                f"\nException: {e}\nTRACEBACK:\n{traceback.format_exc()}"
+            )
+            self.lc.logger.error(error_msg)
+            raise
+
+    def select_columns(self, input_df, columns_to_select):
+        this_module = f"[{self.this_class_name}.select_columns()] -"
+
+        try:
+            self.validate_function_param(
+                this_module,
+                {
+                    "input_df": {
+                        "input_value": input_df,
+                        "data_type": "spark_dataframe",
+                        "check_empty": True,
+                    },
+                    "columns_to_select": {
+                        "input_value": columns_to_select,
+                        "data_type": "list",
+                        "check_empty": True,
+                    },
+                }
+            )
+
+            missing_cols = [col for col in columns_to_select if col not in input_df.columns]
+            if missing_cols:
+                raise ValueError(f"Missing columns in DataFrame: {missing_cols}")
+
+            return input_df.select(*columns_to_select)
+
+        except (AnalysisException, ValueError, TypeError) as e:
+            self.lc.logger.error(f"{this_module} {e}\nTRACEBACK: {traceback.format_exc()}")
+            raise
+
+        except Exception as e:
+            self.lc.logger.error(f"{this_module} Unexpected error.\n{e}\nTRACEBACK: {traceback.format_exc()}")
+            raise
+
+    def drop_columns(self, input_df, columns_to_drop):
+        this_module = f"[{self.this_class_name}.drop_columns()] -"
+
+        try:
+            self.validate_function_param(
+                this_module,
+                {
+                    "input_df": {
+                        "input_value": input_df,
+                        "data_type": "spark_dataframe",
+                        "check_empty": True,
+                    },
+                    "columns_to_drop": {
+                        "input_value": columns_to_drop,
+                        "data_type": "list",
+                        "check_empty": True,
+                    },
+                }
+            )
+
+            existing_cols = [col for col in columns_to_drop if col in input_df.columns]
+            return input_df.drop(*existing_cols)
+
+        except (AnalysisException, ValueError, TypeError) as e:
+            self.lc.logger.error(f"{this_module} {e}\nTRACEBACK: {traceback.format_exc()}")
+            raise
+
+        except Exception as e:
+            self.lc.logger.error(f"{this_module} Unexpected error.\n{e}\nTRACEBACK: {traceback.format_exc()}")
+            raise
+
+    def apply_where_clause(self, input_df, where_clause):
+        this_module = f"[{self.this_class_name}.apply_where_clause()] -"
+
+        try:
+            self.validate_function_param(
+                this_module,
+                {
+                    "input_df": {
+                        "input_value": input_df,
+                        "data_type": "spark_dataframe",
+                        "check_empty": True,
+                    },
+                    "where_clause": {
+                        "input_value": where_clause,
+                        "data_type": "str",
+                        "check_empty": True,
+                    },
+                }
+            )
+
+            return input_df.where(where_clause)
+
+        except AnalysisException as e:
+            self.lc.logger.error(f"{this_module} Invalid where clause: {where_clause}\n{e}\nTRACEBACK: {traceback.format_exc()}")
+            raise
+
+        except Exception as e:
+            self.lc.logger.error(f"{this_module} Failed to apply where clause.\n{e}\nTRACEBACK: {traceback.format_exc()}")
+            raise
+
+    def apply_column_transformations(self, input_df, column_mapping):
+        """
+        column_mapping = [
+            {"source_column": "col1", "target_column": "new_col1"},
+            {"source_column": "col2", "target_column": "new_col2", "target_data_type": "int"},
+        ]
+        """
+        this_module = f"[{self.this_class_name}.apply_column_transformations()] -"
+
+        try:
+            self.validate_function_param(
+                this_module,
+                {
+                    "input_df": {
+                        "input_value": input_df,
+                        "data_type": "spark_dataframe",
+                        "check_empty": True,
+                    },
+                    "column_mapping": {
+                        "input_value": column_mapping,
+                        "data_type": "list",
+                        "check_empty": True,
+                    },
+                }
+            )
+
+            for mapping in column_mapping:
+                if not isinstance(mapping, dict):
+                    raise ValueError(f"Each item in column_mapping must be a dict, got {type(mapping)}")
+
+                if "source_column" not in mapping or "target_column" not in mapping:
+                    raise KeyError("Each mapping must contain 'source_column' and 'target_column' keys")
+
+                src = mapping["source_column"]
+                tgt = mapping["target_column"]
+                dtype = mapping.get("target_data_type")
+
+                if src not in input_df.columns:
+                    raise ValueError(f"Source column '{src}' not found in input DataFrame")
+
+                if dtype:
+                    input_df = input_df.withColumn(tgt, f.col(src).cast(dtype))
+                elif src != tgt:
+                    input_df = input_df.withColumnRenamed(src, tgt)
+
+            return input_df
+
+        except (KeyError, ValueError, TypeError) as e:
+            self.lc.logger.error(f"{this_module} Invalid transformation config.\n{e}\nTRACEBACK: {traceback.format_exc()}")
+            raise
+
+        except AnalysisException as e:
+            self.lc.logger.error(f"{this_module} Spark error during transformation.\n{e}\nTRACEBACK: {traceback.format_exc()}")
+            raise
+
+        except Exception as e:
+            self.lc.logger.error(f"{this_module} Unexpected error in column transformations.\n{e}\nTRACEBACK: {traceback.format_exc()}")
             raise
