@@ -63,3 +63,21 @@ class SqlBatchIngest(BaseIngest):
                     raise
 
         self.post_load()
+
+
+
+# sql_batch:
+#  - name: "step_1"
+#    sql_file_location: <>
+#    target_catalog: sdfsd
+#    target_schema: dafsg
+#    target_table: sdf
+#    validations:
+#      - name: schema_check
+#  - name: "step_2"
+#    sql_file_location: <>
+#    target_catalog: sdfsd
+#    target_schema: dafsg
+#    target_table: tyu
+#    validations:
+#      - name: schema_check
