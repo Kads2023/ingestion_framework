@@ -3,6 +3,16 @@ from pyspark.sql import SparkSession, DataFrame as Spark_Dataframe
 import sqlglot
 
 class SqlBatchIngest(BaseIngest):
+    """
+        SqlBatchIngest executes a list of SQL files as batch steps, with monitoring,
+        validation, and conditional writes to target or quarantine tables.
+
+        Inherits from:
+            BaseIngest: Core class handling Spark session, monitoring, and config I/O.
+
+        Methods:
+            run_batch(): Iterates through configured SQL steps and executes them sequentially.
+        """
     def __init__(self, lc, input_args, job_args, common_utils, process_monitoring, validation_utils, dbutils=None):
         self.this_class_name = f"{type(self).__name__}"
         this_module = f"[{self.this_class_name}.__init__()] -"
@@ -14,6 +24,21 @@ class SqlBatchIngest(BaseIngest):
         pass
 
     def run_batch(self):
+        """
+            Main execution method for batch SQL ingestion steps.
+
+            For each SQL step in the config:
+                - Reads SQL file.
+                - Parses SQL using sqlglot.
+                - Executes SQL on Spark.
+                - Runs data validations.
+                - Writes valid data to target table.
+                - Writes invalid data to quarantine table (if validation fails).
+                - Logs errors and updates monitoring status.
+
+            Raises:
+                Exception: if any step fails and raise_exception is set.
+            """
         this_module = f"[{self.this_class_name}.run_batch()] -"
         self.lc.logger.info(f"Inside {this_module}")
 
