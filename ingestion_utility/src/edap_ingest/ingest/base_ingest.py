@@ -225,10 +225,17 @@ class BaseIngest:
                 derived_column = each_column_dict.get(
                     "derived_column", default_derived_column
                 )
+                # Extract precision/scale if present in schema dict
+                precision = each_column_dict.get("precision", None)
+                scale = each_column_dict.get("scale", None)
                 if derived_column != 'True':
                     now_struct_field = StructField(
                         source_column_name,
-                        self.job_args_obj.get_type(column_data_type)(),
+                        self.job_args_obj.get_type(
+                            column_data_type,
+                            precision=precision,
+                            scale=scale
+                        ),
                     )
                     struct_field_list.append(now_struct_field)
                 if len(struct_field_list) != 0:
