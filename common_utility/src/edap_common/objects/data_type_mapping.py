@@ -2,7 +2,7 @@ from pyspark.sql.types import (
     StringType, IntegerType, LongType, ShortType, ByteType,
     FloatType, DoubleType, DecimalType, BooleanType,
     DateType, TimestampType, BinaryType,
-    ArrayType, MapType, StructType, DataType
+    ArrayType, MapType, StructType
 )
 
 class DataTypeMapping:
@@ -15,7 +15,7 @@ class DataTypeMapping:
         "byte": ByteType,
         "float": FloatType,
         "double": DoubleType,
-        "decimal": DecimalType,
+        "decimal": DecimalType,  # will be handled specially
         "boolean": BooleanType,
         "bool": BooleanType,
         "date": DateType,
@@ -38,7 +38,7 @@ class DataTypeMapping:
         self.common_utils = common_utils
         self.lc.logger.info(f"Inside {this_module}")
 
-    def get_type(self, type_name, passed_module=""):
+    def get_type(self, type_name, precision=None, scale=None, passed_module=""):
         this_module = f"[{self.this_class_name}.get_type()] - {passed_module} -"
         self.common_utils.validate_function_param(
             this_module,
@@ -56,8 +56,19 @@ class DataTypeMapping:
         )
         final_type_name = type_name.strip().lower()
         if final_type_name in self.type_mapping.keys():
-            ret_value = self.type_mapping[final_type_name]
-            return ret_value
+            type_class = self.type_mapping[final_type_name]
+
+            # Special handling for DecimalType
+            if type_class == DecimalType:
+                if precision is not None and scale is not None:
+                    return DecimalType(precision, scale)
+                elif precision is not None:
+                    # Spark requires scale when precision is given
+                    return DecimalType(precision, 0)
+                else:
+                    return DecimalType()  # default (10, 0)
+
+            return type_class()
         else:
             error_msg = (
                 f"{this_module} "
