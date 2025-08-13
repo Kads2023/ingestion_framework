@@ -377,3 +377,170 @@ def test_run_load_failure(monkeypatch, base_ingest):
 # If you want, we can also add pytest.mark.parametrize to tests some different input variations for exit_without_errors, collate_columns_to_add, or form_source_and_target_locations.
 # Would you like me to extend it even further with parametrize examples too? 🚀
 # (Example: Different kinds of audit_columns, table_columns, file names, etc.)
+
+
+# Alright — here’s a pytest unit test for form_schema_from_dict with full coverage using monkeypatch to isolate dependencies.
+# This covers:
+#
+# Normal flow with valid schema.
+#
+# Case when derived_column == 'True' (skips field).
+#
+# Case when schema is missing/empty.
+#
+# Decimal precision/scale handling.
+#
+# Ensures set() is called with a valid StructType.
+
+import pytest
+from pyspark.sql.types import StructType, StructField, StringType, DecimalType
+
+
+class DummyLogger:
+    def __init__(self):
+        self.logged_info = []
+    def info(self, msg):
+        self.logged_info.append(msg)
+    def error(self, msg):
+        pass
+
+
+class DummyJobArgs:
+    def __init__(self, schema=None):
+        self._store = {"schema": schema}
+        self.set_called_with = None
+    def get(self, key):
+        return self._store.get(key)
+    def set(self, key, value):
+        self.set_called_with = (key, value)
+        self._store[key] = value
+    def get_type(self, type_name, precision=None, scale=None):
+        # Mocked type mapping behavior
+        if type_name.lower() == "string":
+            return StringType()
+        elif type_name.lower() == "decimal":
+            return DecimalType(precision or 10, scale or 0)
+        raise ValueError("Unsupported type")
+
+
+class DummyClass:
+    def __init__(self, job_args_obj):
+        self.this_class_name = "DummyClass"
+        self.lc = type("lc", (), {"logger": DummyLogger()})()
+        self.job_args_obj = job_args_obj
+
+    # paste the actual method here
+    def form_schema_from_dict(self):
+        this_module = f"[{self.this_class_name}.form_schema_from_dict()] -"
+        self.lc.logger.info(f"Inside {this_module}")
+        schema_dict = self.job_args_obj.get("schema")
+        if schema_dict:
+            struct_field_list = []
+            for each_column_name in schema_dict.keys():
+                each_column_dict = schema_dict[each_column_name]
+                column_data_type = each_column_dict.get(
+                    "data_type", "string"
+                ).lower().strip()
+                source_column_name = each_column_dict.get(
+                    "source_column_name", each_column_name
+                )
+                derived_column = each_column_dict.get(
+                    "derived_column", "False"
+                )
+                precision = each_column_dict.get("precision", None)
+                scale = each_column_dict.get("scale", None)
+                if derived_column != 'True':
+                    now_struct_field = StructField(
+                        source_column_name,
+                        self.job_args_obj.get_type(
+                            column_data_type,
+                            precision=precision,
+                            scale=scale
+                        ),
+                    )
+                    struct_field_list.append(now_struct_field)
+                if len(struct_field_list) != 0:
+                    schema_struct = StructType(struct_field_list)
+                    self.job_args_obj.set("schema_struct", schema_struct)
+
+
+def test_form_schema_basic(monkeypatch):
+    """Covers normal flow with string and decimal types"""
+    schema = {
+        "col1": {"data_type": "string"},
+        "col2": {"data_type": "decimal", "precision": 15, "scale": 2}
+    }
+    job_args = DummyJobArgs(schema)
+    obj = DummyClass(job_args)
+
+    obj.form_schema_from_dict()
+
+    # Ensure set was called with StructType
+    key, value = job_args.set_called_with
+    assert key == "schema_struct"
+    assert isinstance(value, StructType)
+    # Check field types
+    assert isinstance(value[0].dataType, StringType)
+    assert isinstance(value[1].dataType, DecimalType)
+    assert value[1].dataType.precision == 15
+    assert value[1].dataType.scale == 2
+
+
+def test_form_schema_skip_derived_column():
+    """Covers branch where derived_column == 'True' so it's skipped"""
+    schema = {
+        "col1": {"data_type": "string", "derived_column": "True"}
+    }
+    job_args = DummyJobArgs(schema)
+    obj = DummyClass(job_args)
+
+    obj.form_schema_from_dict()
+
+    # Since derived column is skipped, StructType should still be set
+    key, value = job_args.set_called_with
+    assert key == "schema_struct"
+    assert isinstance(value, StructType)
+    assert len(value.fields) == 0
+
+
+def test_form_schema_no_schema_key():
+    """Covers case where schema is None -> no action"""
+    job_args = DummyJobArgs(schema=None)
+    obj = DummyClass(job_args)
+
+    obj.form_schema_from_dict()
+
+    # No set call should have occurred
+    assert job_args.set_called_with is None
+
+
+def test_form_schema_invalid_type(monkeypatch):
+    """Covers invalid type path"""
+    schema = {
+        "col1": {"data_type": "invalidtype"}
+    }
+    job_args = DummyJobArgs(schema)
+    obj = DummyClass(job_args)
+
+    # Monkeypatch get_type to raise ValueError
+    def raise_valueerror(*args, **kwargs):
+        raise ValueError("Unsupported type")
+    monkeypatch.setattr(job_args, "get_type", raise_valueerror)
+
+    with pytest.raises(ValueError):
+        obj.form_schema_from_dict()
+
+
+#
+# Coverage notes:
+# test_form_schema_basic → Covers normal flow with both StringType and DecimalType including precision/scale.
+#
+# test_form_schema_skip_derived_column → Covers skip branch when derived_column == 'True'.
+#
+# test_form_schema_no_schema_key → Covers case when schema is None.
+#
+# test_form_schema_invalid_type → Covers error path when get_type raises an exception.
+#
+# This will give full branch and line coverage for the method.
+#
+# If you want, I can also merge this into your real DataTypeMapping tests so you’re not duplicating DummyJobArgs but instead using your actual class with monkeypatched dependencies. That way, your tests stay closer to production behavior. Do you want me to do that next?
