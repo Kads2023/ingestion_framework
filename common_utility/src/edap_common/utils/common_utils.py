@@ -764,3 +764,14 @@ class CommonUtils:
         except Exception as e:
             self.lc.logger.error(f"{this_module} Unexpected error in column transformations.\n{e}\nTRACEBACK: {traceback.format_exc()}")
             raise
+
+    class SafeDict(dict):
+        def __missing__(self, key):
+            return f"{{{key}}}"  # Keep placeholder if missing
+
+    def safe_substitute(self, template: str, values: dict) -> str:
+        """
+        Safely substitutes dictionary values into a template string.
+        Missing keys are left as placeholders.
+        """
+        return template.format_map(self.SafeDict(values))

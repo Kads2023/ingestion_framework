@@ -451,3 +451,32 @@ def test_read_file_as_string_os_error(common_utils, monkeypatch):
 
     with pytest.raises(IOError, match="Disk error"):
         common_utils.read_file_as_string("/dbfs/tmp/broken.sql")
+import pytest
+from common_utils import CommonUtils
+
+@pytest.mark.parametrize(
+    "template, values, expected",
+    [
+        # Case 1: All keys present
+        ("Hello {name}", {"name": "Srinivas"}, "Hello Srinivas"),
+        # Case 2: Missing key should be preserved
+        ("Hello {name}, meet {friend}", {"name": "Srinivas"}, "Hello Srinivas, meet {friend}"),
+        # Case 3: Multiple placeholders with some missing
+        ("{greet} {name}", {"greet": "Hi"}, "Hi {name}"),
+        # Case 4: Empty values dict
+        ("Hello {name}", {}, "Hello {name}"),
+    ],
+)
+def test_safe_substitute_success(template, values, expected):
+    assert CommonUtils.safe_substitute(template, values) == expected
+
+
+def test_safe_substitute_with_monkeypatch(monkeypatch):
+    """Test with monkeypatching SafeDict.__missing__ to return a fixed value"""
+    def mock_missing(self, key):
+        return "<MISSING>"
+
+    monkeypatch.setattr(CommonUtils.SafeDict, "__missing__", mock_missing)
+
+    result = CommonUtils.safe_substitute("Hello {name}", {})
+    assert result == "Hello <MISSING>"
