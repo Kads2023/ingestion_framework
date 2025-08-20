@@ -483,7 +483,7 @@ def test_safe_substitute_with_monkeypatch(monkeypatch):
 
 
 import pytest
-from your_module import SafeDict, CommonUtils  # replace your_module with actual module name
+from your_module import SafeDict, CommonUtils  # 🔹 replace with actual module path
 
 
 # ----------------------------
@@ -519,18 +519,19 @@ def mock_spark(monkeypatch):
 # ----------------------------
 
 @pytest.mark.parametrize(
-    "input_dict, key, strict, expected, raises",
+    "input_dict, key, strict, add_quotes, expected, raises",
     [
-        ({"date": "2025-04-03"}, "date", False, "'2025-04-03'", None),   # auto-quote
-        ({"date": "'2025-04-03'"}, "date", False, "'2025-04-03'", None), # already quoted (single)
-        ({"date": '"2025-04-03"'}, "date", False, '"2025-04-03"', None), # already quoted (double)
-        ({"id": 123}, "id", False, 123, None),                           # numeric (no quotes)
-        ({}, "missing_key", False, "{missing_key}", None),               # missing, non-strict
-        ({}, "missing_key", True, None, KeyError),                       # missing, strict raises
+        ({"date": "2025-04-03"}, "date", False, True, "'2025-04-03'", None),   # auto-quote
+        ({"date": "'2025-04-03'"}, "date", False, True, "'2025-04-03'", None), # already quoted (single)
+        ({"date": '"2025-04-03"'}, "date", False, True, '"2025-04-03"', None), # already quoted (double)
+        ({"date": "2025-04-03"}, "date", False, False, "2025-04-03", None),    # no quoting
+        ({"id": 123}, "id", False, True, 123, None),                           # numeric
+        ({}, "missing", False, True, "{missing}", None),                       # missing, non-strict
+        ({}, "missing", True, True, None, KeyError),                           # missing, strict
     ]
 )
-def test_safedict_behavior(input_dict, key, strict, expected, raises):
-    d = SafeDict(input_dict, strict_mode=strict)
+def test_safedict_behavior(input_dict, key, strict, add_quotes, expected, raises):
+    d = SafeDict(input_dict, strict_mode=strict, add_quotes=add_quotes)
     if raises:
         with pytest.raises(raises):
             _ = d[key]
@@ -539,28 +540,43 @@ def test_safedict_behavior(input_dict, key, strict, expected, raises):
 
 
 # ----------------------------
-# Parametrized tests for CommonUtils.safe_substitute
+# Parametrized tests for CommonUtils.safe_substitute_parameters
 # ----------------------------
 
 @pytest.mark.parametrize(
-    "template, values, strict, expected, raises",
+    "template, values, strict, add_quotes, expected, raises",
     [
-        ("select {date}, {id}", {"date": "2025-04-03", "id": 99}, False,
-         "select '2025-04-03', 99", None),  # normal substitution
-        ("select {id}", {"id": 42}, True, "select 42", None),             # strict success
-        ("select {missing}", {}, True, None, KeyError),                   # strict failure
-        ("select {missing}", {}, False, "select {missing}", None),        # non-strict leaves placeholder
+        # auto-quote enabled
+        ("select {date}, {id}", {"date": "2025-04-03", "id": 99}, False, True,
+         "select '2025-04-03', 99", None),
+
+        # auto-quote disabled
+        ("select {date}, {id}", {"date": "2025-04-03", "id": 99}, False, False,
+         "select 2025-04-03, 99", None),
+
+        # strict success
+        ("select {id}", {"id": 42}, True, False, "select 42", None),
+
+        # strict failure
+        ("select {missing}", {}, True, False, None, KeyError),
+
+        # non-strict missing placeholder
+        ("select {missing}", {}, False, False, "select {missing}", None),
     ]
 )
-def test_safe_substitute(template, values, strict, expected, raises, mock_logger, mock_spark):
+def test_safe_substitute_parameters(template, values, strict, add_quotes, expected, raises, mock_logger, mock_spark):
     cu = CommonUtils(lc=mock_logger)
     if raises:
         with pytest.raises(raises):
-            cu.safe_substitute(template, values, strict_mode=strict)
+            cu.safe_substitute_parameters(template, values, strict_mode=strict, add_quotes=add_quotes)
     else:
-        result = cu.safe_substitute(template, values, strict_mode=strict)
+        result = cu.safe_substitute_parameters(template, values, strict_mode=strict, add_quotes=add_quotes)
         assert result == expected
 
+
+# ----------------------------
+# Test CommonUtils initialization with monkeypatched Spark
+# ----------------------------
 
 def test_commonutils_initialization_uses_spark(mock_logger, mock_spark):
     cu = CommonUtils(lc=mock_logger)
