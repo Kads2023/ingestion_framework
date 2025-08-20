@@ -23,6 +23,27 @@ from edap_common.utils.constants import *
 from pyspark.sql.utils import AnalysisException
 
 
+class SafeDict(dict):
+    def __init__(self, *args, strict_mode=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.strict_mode = strict_mode
+
+    def __missing__(self, key):
+        if self.strict_mode:
+            raise KeyError(f"Missing key: {key}")
+        return f"{{{key}}}"  # keep placeholder if not strict
+
+    def __getitem__(self, key):
+        val = super().__getitem__(key)
+        if isinstance(val, str):
+            stripped = val.strip()
+            if (stripped.startswith("'") and stripped.endswith("'")) or \
+               (stripped.startswith('"') and stripped.endswith('"')):
+                return stripped  # already quoted
+            return f"'{stripped}'"  # auto-quote strings
+        return val
+
+
 class CommonUtils:
     def __init__(self, lc):
         """
@@ -765,13 +786,9 @@ class CommonUtils:
             self.lc.logger.error(f"{this_module} Unexpected error in column transformations.\n{e}\nTRACEBACK: {traceback.format_exc()}")
             raise
 
-    class SafeDict(dict):
-        def __missing__(self, key):
-            return f"{{{key}}}"  # Keep placeholder if missing
-
-    def safe_substitute(self, template: str, values: dict) -> str:
+    def safe_substitute(self, template: str, values: dict, strict_mode=False) -> str:
         """
         Safely substitutes dictionary values into a template string.
         Missing keys are left as placeholders.
         """
-        return template.format_map(self.SafeDict(values))
+        return template.format_map(SafeDict(values, strict_mode=strict_mode))
