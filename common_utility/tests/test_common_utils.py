@@ -480,3 +480,88 @@ def test_safe_substitute_with_monkeypatch(monkeypatch):
 
     result = CommonUtils.safe_substitute("Hello {name}", {})
     assert result == "Hello <MISSING>"
+
+
+import pytest
+from your_module import SafeDict, CommonUtils  # replace your_module with actual module name
+
+
+# ----------------------------
+# Fixtures
+# ----------------------------
+
+@pytest.fixture
+def mock_logger():
+    class DummyLogger:
+        def info(self, msg): pass
+        def debug(self, msg): pass
+        def error(self, msg): pass
+    return DummyLogger()
+
+
+@pytest.fixture
+def mock_spark(monkeypatch):
+    class DummySpark:
+        def __init__(self):
+            self.name = "dummy_spark"
+
+    dummy = DummySpark()
+
+    def mock_get_active_session():
+        return dummy
+
+    monkeypatch.setattr("your_module.SparkSession.getActiveSession", mock_get_active_session)
+    return dummy
+
+
+# ----------------------------
+# Parametrized tests for SafeDict
+# ----------------------------
+
+@pytest.mark.parametrize(
+    "input_dict, key, strict, expected, raises",
+    [
+        ({"date": "2025-04-03"}, "date", False, "'2025-04-03'", None),   # auto-quote
+        ({"date": "'2025-04-03'"}, "date", False, "'2025-04-03'", None), # already quoted (single)
+        ({"date": '"2025-04-03"'}, "date", False, '"2025-04-03"', None), # already quoted (double)
+        ({"id": 123}, "id", False, 123, None),                           # numeric (no quotes)
+        ({}, "missing_key", False, "{missing_key}", None),               # missing, non-strict
+        ({}, "missing_key", True, None, KeyError),                       # missing, strict raises
+    ]
+)
+def test_safedict_behavior(input_dict, key, strict, expected, raises):
+    d = SafeDict(input_dict, strict_mode=strict)
+    if raises:
+        with pytest.raises(raises):
+            _ = d[key]
+    else:
+        assert d[key] == expected
+
+
+# ----------------------------
+# Parametrized tests for CommonUtils.safe_substitute
+# ----------------------------
+
+@pytest.mark.parametrize(
+    "template, values, strict, expected, raises",
+    [
+        ("select {date}, {id}", {"date": "2025-04-03", "id": 99}, False,
+         "select '2025-04-03', 99", None),  # normal substitution
+        ("select {id}", {"id": 42}, True, "select 42", None),             # strict success
+        ("select {missing}", {}, True, None, KeyError),                   # strict failure
+        ("select {missing}", {}, False, "select {missing}", None),        # non-strict leaves placeholder
+    ]
+)
+def test_safe_substitute(template, values, strict, expected, raises, mock_logger, mock_spark):
+    cu = CommonUtils(lc=mock_logger)
+    if raises:
+        with pytest.raises(raises):
+            cu.safe_substitute(template, values, strict_mode=strict)
+    else:
+        result = cu.safe_substitute(template, values, strict_mode=strict)
+        assert result == expected
+
+
+def test_commonutils_initialization_uses_spark(mock_logger, mock_spark):
+    cu = CommonUtils(lc=mock_logger)
+    assert cu.spark.name == "dummy_spark"
