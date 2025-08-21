@@ -204,6 +204,22 @@ class BaseIngest:
             self.lc.logger.info(message)
             self.exit_without_errors(message)
 
+    def _validate_file_extension(self, file_path: str, expected_extension: str) -> None:
+        """
+        Validate that the file extension matches the expected one.
+
+        Args:
+            file_path (str): The path of the file to validate.
+            expected_extension (str): The expected file extension.
+
+        Raises:
+            ValueError: If the file extension does not match.
+        """
+        if not file_path.lower().endswith(f".{expected_extension.lower()}"):
+            raise ValueError(
+                f"Invalid file extension for {file_path}. Expected .{expected_extension}"
+            )
+
     def form_schema_from_dict(self):
         """
         Forms a Spark StructType schema from the 'schema' dictionary in job arguments.

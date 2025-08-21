@@ -544,3 +544,32 @@ def test_form_schema_invalid_type(monkeypatch):
 # This will give full branch and line coverage for the method.
 #
 # If you want, I can also merge this into your real DataTypeMapping tests so you’re not duplicating DummyJobArgs but instead using your actual class with monkeypatched dependencies. That way, your tests stay closer to production behavior. Do you want me to do that next?
+
+
+import pytest
+from edap_ingest.ingest.base_ingest import BaseIngest
+
+@pytest.mark.parametrize(
+    "file_path, expected_extension, should_raise",
+    [
+        ("data/file.csv", "csv", False),
+        ("data/file.CSV", "csv", False),   # case-insensitive
+        ("data/file.json", "json", False),
+        ("data/file.JSON", "json", False),
+        ("data/file.parquet", "parquet", False),
+        ("data/file.PARQUET", "parquet", False),
+        ("data/file.txt", "csv", True),     # mismatch
+        ("data/file.csv", "json", True),    # mismatch
+        ("data/file", "csv", True),         # no extension
+    ],
+)
+def test_validate_file_extension(monkeypatch, file_path, expected_extension, should_raise):
+    # Arrange
+    ingest = BaseIngest.__new__(BaseIngest)  # avoid __init__ since it's abstract
+
+    # Act + Assert
+    if should_raise:
+        with pytest.raises(ValueError, match=f"Expected .{expected_extension}"):
+            ingest._validate_file_extension(file_path, expected_extension)
+    else:
+        ingest._validate_file_extension(file_path, expected_extension)

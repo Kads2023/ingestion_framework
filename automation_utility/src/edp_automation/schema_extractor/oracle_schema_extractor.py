@@ -72,7 +72,8 @@ class OracleSchemaExtractor(BaseSchemaExtractor):
                     c.DATA_SCALE "data_scale",
                     c.NULLABLE "nullable",
                     c.IDENTITY_COLUMN "identity_column",
-                    cm.comments "comments"
+                    cm.comments "comments",
+                    c.COLUMN_ID "column_id"
                 FROM ALL_TAB_COLUMNS c
                 LEFT JOIN ALL_COL_COMMENTS cm
                     ON c.owner = cm.owner
@@ -89,6 +90,8 @@ class OracleSchemaExtractor(BaseSchemaExtractor):
             cursor.execute(query, params)
             columns = [desc[0].lower() for desc in cursor.description]
             results = [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+            results.sort(key=lambda each_row: each_row['column_id'])
             print(f"results --> {results}")
 
             self.write_to_json(results, output_file_path)
