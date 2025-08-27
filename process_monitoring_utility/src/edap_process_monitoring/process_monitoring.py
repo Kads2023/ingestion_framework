@@ -28,7 +28,7 @@ class ProcessMonitoring:
         self.empty_rdd = self.spark.sparkContext.emptyRDD()
         self.empty_df = self.spark.createDataFrame(self.empty_rdd, self.schema)
         self.empty_dict = {}
-        self._engine = None   # <-- class-level cache for engine
+        self._engine = None   # engine cached per instance
 
     def retry_any_function(self, func, *args, **kwargs):
         decorated_func = self.common_utils.retry_on_exception(
@@ -36,11 +36,10 @@ class ProcessMonitoring:
             delay_seconds=DELAY_SECONDS,
             backoff_factor=BACKOFF_FACTOR,
         )(func)
-        result = decorated_func(*args, **kwargs)
-        return result
+        return decorated_func(*args, **kwargs)
 
     def _create_engine(self):
-        """Helper to create a new SQLAlchemy engine with fresh token."""
+        """Create a new SQLAlchemy engine with fresh Azure AD token."""
         connection_string = self.job_args_obj.get("process_monitoring_conn_str")
         params = parse.quote(connection_string)
 
@@ -55,11 +54,11 @@ class ProcessMonitoring:
         return create_engine(
             "mssql+pyodbc:///?odbc_connect={0}".format(params),
             connect_args={"attrs_before": {SQL_COPT_SS_ACCESS_TOKEN: token_struct}},
-            pool_pre_ping=True,   # <-- checks connections before using them
+            pool_pre_ping=True,   # auto-recycle stale connections
         )
 
     def get_conn(self):
-        """Get reusable engine, refresh if needed."""
+        """Return reusable engine, create if missing."""
         if self._engine is None:
             self._engine = self._create_engine()
         return self._engine
@@ -101,10 +100,11 @@ class ProcessMonitoring:
                             if rows:
                                 pandas_df = pd.DataFrame.from_records(rows, columns=columns)
                                 read_df = self.spark.createDataFrame(pandas_df)
-                        conn.commit()
                 except OperationalError:
-                    # Refresh engine on failure (token expired etc.)
-                    self.lc.logger.warning("Connection expired, refreshing token and engine...")
+                    self.lc.logger.warning(
+                        "Connection expired or failed, will be retried. "
+                        f"Traceback: {traceback.format_exc()}"
+                    )
                     raise
             else:
                 error_msg = f"CANNOT EXECUTE THE QUERY"
