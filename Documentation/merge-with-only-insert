@@ -1,0 +1,104 @@
+So requirements are:
+
+Target is append-only → no updates allowed.
+
+Only insert new row if:
+
+(id, business_date) not already in target, and
+
+Value differs from the latest available value before that business_date.
+
+If value is the same as previous day’s value → skip insert (no duplication of state).
+
+Out-of-order (late-arriving) data must still slot in correctly.
+
+Example Walkthrough
+
+Target before late arrival:
+
+business_date | inserted_time        | id  | value
+01/01/2025    | 01/02/2025 10:00:00  | 123 | A
+01/02/2025    | 01/03/2025 15:35:00  | 123 | B
+01/04/2025    | 01/05/2025 10:20:22  | 123 | C
+
+
+Now we receive late data for 01/03/2025: id=123, value=A.
+
+For 123, the previous latest value as of 01/02/2025 is B,
+
+Incoming is A, which is different → insert new record with business_date=01/03/2025.
+
+Target becomes:
+
+business_date | inserted_time        | id  | value
+01/01/2025    | 01/02/2025 10:00:00  | 123 | A
+01/02/2025    | 01/03/2025 15:35:00  | 123 | B
+01/03/2025    | 01/05/2025 11:20:00  | 123 | A   <-- late-arriving insert
+01/04/2025    | 01/05/2025 10:20:22  | 123 | C
+
+How to Implement in SQL (Delta Lake / Snowflake / Synapse)
+
+You can solve this with a staging layer + MERGE.
+The staging layer ensures you only keep rows where the value changed compared to the latest existing record before that business_date.
+
+WITH latest_target AS (
+    SELECT
+        t.id,
+        t.business_date,
+        t.value,
+        ROW_NUMBER() OVER (
+            PARTITION BY t.id
+            ORDER BY t.business_date DESC
+        ) AS rn
+    FROM target t
+),
+candidate_source AS (
+    SELECT
+        s.id,
+        s.value,
+        s.business_date,
+        current_timestamp() AS inserted_time
+    FROM source s
+)
+, filtered AS (
+    SELECT c.*
+    FROM candidate_source c
+    LEFT JOIN (
+        SELECT id, business_date, value
+        FROM target
+    ) t
+      ON t.id = c.id
+     AND t.business_date = c.business_date
+    WHERE t.id IS NULL  -- not already in target
+      AND (
+        -- value is different from the last known before this date
+        c.value <> (
+            SELECT t2.value
+            FROM target t2
+            WHERE t2.id = c.id
+              AND t2.business_date < c.business_date
+            ORDER BY t2.business_date DESC
+            LIMIT 1
+        )
+        OR NOT EXISTS (
+            SELECT 1
+            FROM target t2
+            WHERE t2.id = c.id
+              AND t2.business_date < c.business_date
+        )
+      )
+)
+MERGE INTO target t
+USING filtered f
+ON 1=0   -- force insert only
+WHEN NOT MATCHED THEN
+  INSERT (business_date, inserted_time, id, value)
+  VALUES (f.business_date, f.inserted_time, f.id, f.value);
+
+Key Points
+
+NOT MATCHED → ensures insert-only.
+
+Subquery ensures we only insert if value changed vs latest earlier record.
+
+Late-arriving data (01/03/2025) still gets inserted correctly even though 01/04/2025 was already in.
