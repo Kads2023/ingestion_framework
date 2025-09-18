@@ -1,0 +1,112 @@
+Problem Recap
+
+Insert-only: no updates allowed, only inserts.
+
+If values change → insert a new row.
+
+If the composite key (id, sub_id) is missing in a given business_date full load → we insert a closing record with valid_till = previous_date.
+
+Normally valid_till = NULL, meaning the record is still active.
+
+Updated Query with valid_till
+WITH candidate_source AS (
+    SELECT
+        s.*,
+        current_timestamp() AS inserted_time
+    FROM source s
+),
+
+-- Latest known record in target for each composite key
+latest_before AS (
+    SELECT
+        t.id,
+        t.sub_id,
+        t.business_date,
+        t.value1,
+        t.value2,
+        t.valid_till,
+        ROW_NUMBER() OVER (
+            PARTITION BY t.id, t.sub_id
+            ORDER BY t.business_date DESC
+        ) AS rn
+    FROM target t
+),
+
+last_known AS (
+    SELECT id, sub_id, business_date, value1, value2, valid_till
+    FROM latest_before
+    WHERE rn = 1
+),
+
+-- Insert candidates: new rows not already in target, and value change detection
+new_rows AS (
+    SELECT c.*, NULL AS valid_till
+    FROM candidate_source c
+    LEFT JOIN target t
+      ON  t.id = c.id
+      AND t.sub_id = c.sub_id
+      AND t.business_date = c.business_date
+    LEFT JOIN last_known l
+      ON  l.id = c.id
+      AND l.sub_id = c.sub_id
+      AND l.business_date < c.business_date
+    WHERE t.id IS NULL
+      AND (
+           l.id IS NULL
+        OR (c.value1 <> l.value1 OR c.value2 <> l.value2)
+      )
+),
+
+-- Detect keys missing in today’s full load, close them with valid_till = prev_date
+expired_keys AS (
+    SELECT
+        l.id,
+        l.sub_id,
+        DATEADD(DAY, -1, cs.business_date) AS valid_till,
+        current_timestamp() AS inserted_time,
+        l.value1,
+        l.value2,
+        cs.business_date AS business_date -- the date of the full load
+    FROM last_known l
+    LEFT JOIN candidate_source cs
+      ON l.id = cs.id
+      AND l.sub_id = cs.sub_id
+    WHERE cs.id IS NULL    -- key missing in today’s source
+      AND l.valid_till IS NULL -- still open
+)
+
+-- Final union of inserts
+SELECT * FROM new_rows
+UNION ALL
+SELECT * FROM expired_keys;
+
+Step-by-Step Explanation
+
+candidate_source
+Brings in today’s source full load and stamps inserted_time.
+
+latest_before & last_known
+Finds the latest record in target for each (id, sub_id). This gives the last known values and whether they are still open (valid_till IS NULL).
+
+new_rows
+
+Insert if the record does not already exist in target.
+
+If values differ from last known → insert as a fresh row.
+
+These always get valid_till = NULL.
+
+expired_keys
+
+If a key exists in last_known but is missing in today’s source → we insert a new row to close it.
+
+We mark valid_till = business_date - 1.
+
+This preserves the insert-only rule (we never update the existing row, just insert a closing record).
+
+Final union
+Combines both kinds of inserts:
+
+Value changes (new_rows)
+
+Expired keys (expired_keys).
