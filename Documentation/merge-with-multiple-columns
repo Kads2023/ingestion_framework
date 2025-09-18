@@ -1,0 +1,109 @@
+Now we’re generalizing from your single (id, value) case to a multi-column composite key and potentially wide source tables. The requirements are still:
+
+Target is append-only (no UPDATE).
+
+Only insert if:
+
+(business_date, composite_key) not already in target.
+
+The row is different from the “last known” record for that composite key (so no duplicates when value doesn’t change).
+
+Needs to be efficient even if source has many columns.
+
+General Pattern (Composite Key)
+
+Suppose the key is (id, sub_id) and you have other columns like value1, value2, ....
+
+Target schema:
+
+business_date DATE,
+inserted_time TIMESTAMP,
+id STRING,
+sub_id STRING,
+value1 STRING,
+value2 INT,
+...
+
+
+Source schema (similar, without inserted_time).
+
+Step 1: Deduplicate & Filter Candidates
+
+We first filter out:
+
+Rows already present for the same (business_date, composite key)
+
+Rows where all non-key attributes equal the last known values for that composite key before the business_date.
+
+Efficient approach uses window functions instead of correlated subqueries.
+
+WITH candidate_source AS (
+    SELECT
+        s.*,
+        current_timestamp() AS inserted_time
+    FROM source s
+),
+latest_before AS (
+    SELECT
+        t.id,
+        t.sub_id,
+        t.business_date,
+        t.value1,
+        t.value2,
+        ROW_NUMBER() OVER (
+            PARTITION BY t.id, t.sub_id
+            ORDER BY t.business_date DESC
+        ) AS rn
+    FROM target t
+)
+, last_known AS (
+    SELECT id, sub_id, business_date, value1, value2
+    FROM latest_before
+    WHERE rn = 1
+)
+, filtered AS (
+    SELECT c.*
+    FROM candidate_source c
+    LEFT JOIN target t
+      ON  t.id = c.id
+      AND t.sub_id = c.sub_id
+      AND t.business_date = c.business_date
+    LEFT JOIN last_known l
+      ON  l.id = c.id
+      AND l.sub_id = c.sub_id
+      AND l.business_date < c.business_date
+    WHERE t.id IS NULL  -- not already in target
+      AND (
+           l.id IS NULL -- no prior history
+        OR (c.value1 <> l.value1 OR c.value2 <> l.value2) -- at least one column differs
+      )
+)
+
+Step 2: Insert Only with MERGE
+
+Now insert filtered rows into target. Notice the ON 1=0 trick to enforce insert-only merge:
+
+MERGE INTO target t
+USING filtered f
+ON 1=0
+WHEN NOT MATCHED THEN
+  INSERT (business_date, inserted_time, id, sub_id, value1, value2)
+  VALUES (f.business_date, f.inserted_time, f.id, f.sub_id, f.value1, f.value2);
+
+Why this is Efficient
+
+Single scan on target via latest_before window function (instead of correlated subquery per row).
+
+Composite key friendly — PARTITION BY id, sub_id can be extended to however many key columns you have.
+
+Wide tables — comparison is vectorized (c.value1 <> l.value1 OR c.value2 <> l.value2 ...), avoids row-by-row logic.
+
+Optional: Automate Column Comparison
+
+If you have many non-key columns, you can generate the comparison condition dynamically:
+
+(c.value1, c.value2, c.value3) <> (l.value1, l.value2, l.value3)
+
+
+This works in engines that support row-wise comparisons (Snowflake, BigQuery, PostgreSQL).
+If not, you expand into OR conditions as shown above.
