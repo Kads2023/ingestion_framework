@@ -107,3 +107,136 @@ If you have many non-key columns, you can generate the comparison condition dyna
 
 This works in engines that support row-wise comparisons (Snowflake, BigQuery, PostgreSQL).
 If not, you expand into OR conditions as shown above.
+
+
+
+1. candidate_source
+WITH candidate_source AS (
+    SELECT
+        s.*,
+        current_timestamp() AS inserted_time
+    FROM source s
+)
+
+
+Takes your incoming source file.
+
+Adds inserted_time = current_timestamp() (so every new record gets an ingestion timestamp).
+
+This is the raw set of rows that could be inserted into the target.
+
+2. latest_before
+latest_before AS (
+    SELECT
+        t.id,
+        t.sub_id,
+        t.business_date,
+        t.value1,
+        t.value2,
+        ROW_NUMBER() OVER (
+            PARTITION BY t.id, t.sub_id
+            ORDER BY t.business_date DESC
+        ) AS rn
+    FROM target t
+)
+
+
+Looks at the target table (the history you already have).
+
+For each (id, sub_id) (the composite key), it assigns a row number:
+
+rn = 1 → the latest row (highest business_date).
+
+rn = 2 → the second-latest, and so on.
+
+This prepares us to quickly find “the last known state” for each composite key.
+
+3. last_known
+, last_known AS (
+    SELECT id, sub_id, business_date, value1, value2
+    FROM latest_before
+    WHERE rn = 1
+)
+
+
+Picks only the latest record per (id, sub_id) from the target.
+
+This gives us the most recent known values for that key.
+
+Example:
+
+Target has rows (123, A, 01/01/2025) and (123, B, 01/02/2025).
+
+last_known for 123 = (B, 01/02/2025) (since that’s the most recent business_date).
+
+4. filtered
+, filtered AS (
+    SELECT c.*
+    FROM candidate_source c
+    LEFT JOIN target t
+      ON  t.id = c.id
+      AND t.sub_id = c.sub_id
+      AND t.business_date = c.business_date
+    LEFT JOIN last_known l
+      ON  l.id = c.id
+      AND l.sub_id = c.sub_id
+      AND l.business_date < c.business_date
+    WHERE t.id IS NULL  -- not already in target
+      AND (
+           l.id IS NULL -- no prior history
+        OR (c.value1 <> l.value1 OR c.value2 <> l.value2) -- at least one column differs
+      )
+)
+
+
+This is the filtering logic before inserting into target.
+
+LEFT JOIN target → checks if a candidate row for (id, sub_id, business_date) already exists.
+
+t.id IS NULL ensures we don’t insert duplicates.
+
+LEFT JOIN last_known → finds the last known state for that (id, sub_id) before this candidate’s business_date.
+
+If l.id IS NULL → this is the first ever row for that key, so we must insert it.
+
+Otherwise, we compare values:
+
+(c.value1 <> l.value1 OR c.value2 <> l.value2) ensures we only insert when something changed compared to last known state.
+
+Putting it All Together
+
+So the logic is:
+
+Take all source rows (candidate_source).
+
+For each row, check if it already exists in target for (id, sub_id, business_date).
+
+If yes → skip.
+
+If not in target, compare against the last known row for that (id, sub_id).
+
+If no last known row exists → insert (first occurrence).
+
+If last known exists but values are different → insert (state changed).
+
+If last known exists and values are the same → skip (no new info).
+
+Example Flow
+
+Target before:
+
+business_date | id  | sub_id | value1 | value2
+2025-01-01    | 123 | X      | A      | 10
+2025-01-02    | 123 | X      | B      | 10
+
+
+Incoming source:
+
+business_date | id  | sub_id | value1 | value2
+2025-01-03    | 123 | X      | B      | 10   -- same as last known
+2025-01-04    | 123 | X      | C      | 15   -- different
+
+
+For 01/03 → last known is (B, 10) → same → skip.
+
+For 01/04 → last known is (B, 10) → different → insert.
